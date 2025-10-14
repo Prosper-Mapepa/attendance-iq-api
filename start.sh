@@ -13,4 +13,4 @@ npx prisma migrate deploy
 
 # Start the application
 echo "🎯 Starting NestJS application..."
-npm run start:prod
+pnpm run start:prod
