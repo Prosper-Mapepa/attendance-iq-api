@@ -1,6 +1,6 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "rm -rf dist && pnpm install && pnpm run build:deploy"
+buildCommand = "rm -rf dist && pnpm install && pnpm run build"
 
 [deploy]
 startCommand = "pnpm run start:prod"

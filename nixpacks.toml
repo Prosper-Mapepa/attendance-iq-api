@@ -5,7 +5,7 @@ nixPkgs = ["nodejs", "pnpm"]
 cmds = ["pnpm install --frozen-lockfile"]
 
 [phases.build]
-cmds = ["rm -rf dist", "pnpm run build:deploy"]
+cmds = ["rm -rf dist", "pnpm run build"]
 
 [start]
 cmd = "pnpm run start:prod"
