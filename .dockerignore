@@ -80,5 +80,5 @@ jspm_packages/
 
 # TypeScript cache (already excluded above)
 
-# Prisma
-prisma/migrations
+# Prisma (keep migrations for deployment)
+# prisma/migrations
