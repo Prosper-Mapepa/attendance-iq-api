@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "classes" ADD COLUMN     "latitude" DOUBLE PRECISION,
+ADD COLUMN     "locationRadius" DOUBLE PRECISION DEFAULT 50,
+ADD COLUMN     "longitude" DOUBLE PRECISION;
