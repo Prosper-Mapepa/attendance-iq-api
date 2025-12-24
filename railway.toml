@@ -4,7 +4,5 @@ buildCommand = "rm -rf dist && pnpm install && pnpm run build"
 
 [deploy]
 startCommand = "pnpm run start:prod"
-healthcheckPath = "/health"
-healthcheckTimeout = 200
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
