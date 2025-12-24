@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "resetToken" TEXT,
+ADD COLUMN IF NOT EXISTS "resetTokenExpiry" TIMESTAMP(3);
+
