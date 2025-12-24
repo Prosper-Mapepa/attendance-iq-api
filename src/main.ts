@@ -5,7 +5,13 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   try {
-    const app = await NestFactory.create(AppModule);
+    console.log('Starting application...');
+    console.log('Environment:', process.env.NODE_ENV || 'development');
+    console.log('Port:', process.env.PORT || 3002);
+    
+    const app = await NestFactory.create(AppModule, {
+      logger: ['error', 'warn', 'log'],
+    });
 
     // Enable CORS
     const corsOrigins = process.env.CORS_ORIGIN 
@@ -24,7 +30,7 @@ async function bootstrap() {
       transform: true,
     }));
 
-    // Health check endpoint - register early
+    // Health check endpoint - register early, before database connection
     app.getHttpAdapter().get('/health', (req, res) => {
       res.status(200).json({ 
         status: 'ok', 
@@ -33,6 +39,8 @@ async function bootstrap() {
         environment: process.env.NODE_ENV || 'development'
       });
     });
+    
+    console.log('Health endpoint registered');
 
   // Swagger documentation
   const config = new DocumentBuilder()
@@ -46,12 +54,14 @@ async function bootstrap() {
   SwaggerModule.setup('api', app, document);
 
     const port = process.env.PORT || 3002;
-    await app.listen(port);
-    console.log(`Application is running on: http://localhost:${port}`);
-    console.log(`Swagger documentation: http://localhost:${port}/api`);
-    console.log(`Health check available at: http://localhost:${port}/health`);
+    console.log(`Starting server on port ${port}...`);
+    await app.listen(port, '0.0.0.0');
+    console.log(`✅ Application is running on: http://0.0.0.0:${port}`);
+    console.log(`✅ Swagger documentation: http://0.0.0.0:${port}/api`);
+    console.log(`✅ Health check available at: http://0.0.0.0:${port}/health`);
   } catch (error) {
-    console.error('Failed to start application:', error);
+    console.error('❌ Failed to start application:', error);
+    console.error('Error details:', error instanceof Error ? error.stack : error);
     process.exit(1);
   }
 }

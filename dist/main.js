@@ -6,7 +6,12 @@ const swagger_1 = require("@nestjs/swagger");
 const app_module_1 = require("./app.module");
 async function bootstrap() {
     try {
-        const app = await core_1.NestFactory.create(app_module_1.AppModule);
+        console.log('Starting application...');
+        console.log('Environment:', process.env.NODE_ENV || 'development');
+        console.log('Port:', process.env.PORT || 3002);
+        const app = await core_1.NestFactory.create(app_module_1.AppModule, {
+            logger: ['error', 'warn', 'log'],
+        });
         const corsOrigins = process.env.CORS_ORIGIN
             ? process.env.CORS_ORIGIN.split(',')
             : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
@@ -27,6 +32,7 @@ async function bootstrap() {
                 environment: process.env.NODE_ENV || 'development'
             });
         });
+        console.log('Health endpoint registered');
         const config = new swagger_1.DocumentBuilder()
             .setTitle('AttendIQ API')
             .setDescription('API for classroom attendance management with QR + OTP system')
@@ -36,13 +42,15 @@ async function bootstrap() {
         const document = swagger_1.SwaggerModule.createDocument(app, config);
         swagger_1.SwaggerModule.setup('api', app, document);
         const port = process.env.PORT || 3002;
-        await app.listen(port);
-        console.log(`Application is running on: http://localhost:${port}`);
-        console.log(`Swagger documentation: http://localhost:${port}/api`);
-        console.log(`Health check available at: http://localhost:${port}/health`);
+        console.log(`Starting server on port ${port}...`);
+        await app.listen(port, '0.0.0.0');
+        console.log(`✅ Application is running on: http://0.0.0.0:${port}`);
+        console.log(`✅ Swagger documentation: http://0.0.0.0:${port}/api`);
+        console.log(`✅ Health check available at: http://0.0.0.0:${port}/health`);
     }
     catch (error) {
-        console.error('Failed to start application:', error);
+        console.error('❌ Failed to start application:', error);
+        console.error('Error details:', error instanceof Error ? error.stack : error);
         process.exit(1);
     }
 }
