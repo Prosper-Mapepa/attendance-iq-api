@@ -17,6 +17,11 @@ model User {
   passwordHash String
   role        UserRole @default(STUDENT)
   qrCode      String   @unique
+  resetToken  String?
+  resetTokenExpiry DateTime?
+  pendingEmail String?
+  emailVerificationToken String?
+  emailVerificationExpiry DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -52,12 +57,14 @@ model Class {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  classId   String
-  otp       String   @unique
-  validUntil DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String   @id @default(cuid())
+  classId         String
+  otp             String   @unique
+  validUntil      DateTime // OTP expiration time
+  clockInDeadline DateTime // Deadline for students to clock in
+  classDuration   Int      // Total class duration in minutes
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   // Relations
   class      Class        @relation(fields: [classId], references: [id])
@@ -84,7 +91,10 @@ model Attendance {
   id                String   @id @default(cuid())
   sessionId         String
   studentId         String
-  timestamp         DateTime @default(now())
+  timestamp         DateTime @default(now()) // Kept for backward compatibility (acts as clockInTime)
+  clockInTime       DateTime? // When student clocked in
+  clockOutTime      DateTime? // When student clocked out
+  status            AttendanceStatus @default(CLOCKED_IN)
   location          String?
   latitude          Float?
   longitude         Float?
@@ -131,5 +141,11 @@ enum FlagStatus {
   PENDING
   RESOLVED
   DISMISSED
+}
+
+enum AttendanceStatus {
+  CLOCKED_IN
+  CLOCKED_OUT
+  COMPLETED
 }
 

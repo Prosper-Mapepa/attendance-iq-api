@@ -39,7 +39,7 @@ let SessionsService = class SessionsService {
         });
     }
     async create(createSessionDto, teacherId) {
-        const { classId, duration } = createSessionDto;
+        const { classId, duration, classDuration } = createSessionDto;
         const classExists = await this.prisma.class.findFirst({
             where: {
                 id: classId,
@@ -50,12 +50,16 @@ let SessionsService = class SessionsService {
             throw new common_1.NotFoundException('Class not found or access denied');
         }
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const validUntil = new Date(Date.now() + duration * 60 * 1000);
+        const sessionStartTime = new Date();
+        const clockInDeadline = new Date(sessionStartTime.getTime() + duration * 60 * 1000);
+        const validUntil = clockInDeadline;
         const session = await this.prisma.session.create({
             data: {
                 classId,
                 otp,
                 validUntil,
+                clockInDeadline,
+                classDuration,
             },
             include: {
                 class: {

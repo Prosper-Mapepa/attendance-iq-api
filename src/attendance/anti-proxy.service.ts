@@ -83,21 +83,28 @@ export class AntiProxyService {
 
   /**
    * Check if device fingerprint matches previous records
+   * Enhanced with credential sharing detection
    */
   async validateDeviceFingerprint(
     userId: string,
-    deviceFingerprint: string
-  ): Promise<{ isValid: boolean; isNewDevice: boolean; riskScore: number }> {
+    deviceFingerprint: string,
+    latitude?: number,
+    longitude?: number
+  ): Promise<{ isValid: boolean; isNewDevice: boolean; riskScore: number; reasons: string[] }> {
+    const reasons: string[] = [];
+    
     // Get user's previous device fingerprints
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
         attendance: {
-          take: 10,
+          take: 20,
           orderBy: { timestamp: 'desc' },
           select: {
             deviceFingerprint: true,
             timestamp: true,
+            latitude: true,
+            longitude: true,
           },
         },
       },
@@ -112,11 +119,35 @@ export class AntiProxyService {
       (record) => record.deviceFingerprint === deviceFingerprint
     );
 
+    // CREDENTIAL SHARING DETECTION: Check if same device is used by multiple students
+    const sameDeviceUsers = await this.prisma.attendance.findMany({
+      where: {
+        deviceFingerprint: deviceFingerprint,
+        studentId: { not: userId }, // Different students using same device
+        timestamp: {
+          gte: new Date(Date.now() - 60 * 60 * 1000), // Within last hour
+        },
+      },
+      select: {
+        studentId: true,
+        timestamp: true,
+      },
+      distinct: ['studentId'],
+    });
+
     // Calculate risk score (0-100, higher = more risky)
     let riskScore = 0;
 
+    // Device-related checks
     if (isNewDevice) {
-      riskScore += 30; // New device is risky
+      riskScore += 25; // New device is moderately risky
+      reasons.push('New device detected');
+    }
+
+    // CREDENTIAL SHARING: Same device used by multiple students (high risk)
+    if (sameDeviceUsers.length > 0) {
+      riskScore += 50; // Very high risk - likely credential sharing
+      reasons.push(`Same device used by ${sameDeviceUsers.length} other student(s) recently - Possible credential sharing`);
     }
 
     // Check for rapid device changes (multiple devices in short time)
@@ -128,8 +159,59 @@ export class AntiProxyService {
       .map((record) => record.deviceFingerprint);
 
     const uniqueRecentFingerprints = new Set(recentFingerprints);
-    if (uniqueRecentFingerprints.size > 2) {
-      riskScore += 40; // Multiple devices in short period
+    if (uniqueRecentFingerprints.size > 3) {
+      riskScore += 35; // Multiple devices in short period
+      reasons.push(`Using ${uniqueRecentFingerprints.size} different devices in 7 days`);
+    } else if (uniqueRecentFingerprints.size > 2 && !isNewDevice) {
+      riskScore += 20; // Moderate device switching
+    }
+
+    // Check for simultaneous clock-ins from different locations (credential sharing indicator)
+    if (latitude && longitude) {
+      const recentAttendance = user.attendance.filter(
+        (record) =>
+          record.timestamp > new Date(Date.now() - 30 * 60 * 1000) && // Last 30 minutes
+          record.latitude &&
+          record.longitude
+      );
+
+      if (recentAttendance.length > 0) {
+        // Calculate distance between current and previous locations
+        const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+          const R = 6371e3; // Earth's radius in meters
+          const φ1 = lat1 * Math.PI / 180;
+          const φ2 = lat2 * Math.PI / 180;
+          const Δφ = (lat2 - lat1) * Math.PI / 180;
+          const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+          const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ/2) * Math.sin(Δλ/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+          return R * c; // Distance in meters
+        };
+
+        const latestAttendance = recentAttendance[0];
+        if (latestAttendance.latitude && latestAttendance.longitude) {
+          const distance = calculateDistance(
+            latitude,
+            longitude,
+            latestAttendance.latitude,
+            latestAttendance.longitude
+          );
+
+          // If student "moved" more than 500 meters in less than 5 minutes, it's suspicious
+          const timeDiff = Date.now() - latestAttendance.timestamp.getTime();
+          if (distance > 500 && timeDiff < 5 * 60 * 1000) {
+            riskScore += 40;
+            reasons.push(`Impossible location change: ${Math.round(distance)}m in ${Math.round(timeDiff/1000)}s - Possible credential sharing`);
+          } else if (distance > 1000 && timeDiff < 10 * 60 * 1000) {
+            riskScore += 25;
+            reasons.push(`Rapid location change: ${Math.round(distance)}m`);
+          }
+        }
+      }
     }
 
     // Check for attendance patterns
@@ -138,16 +220,33 @@ export class AntiProxyService {
         record.timestamp > new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
     ).length;
 
-    if (recentAttendanceCount > 5) {
-      riskScore += 20; // Too many attendance marks in short time
+    if (recentAttendanceCount > 6) {
+      riskScore += 15; // Too many attendance marks in short time
+      reasons.push(`Unusual activity: ${recentAttendanceCount} clock-ins in 24 hours`);
     }
 
-    const isValid = riskScore < 70; // Threshold for requiring additional verification
+    // Check for pattern where user consistently uses different devices (credential sharing pattern)
+    if (uniqueRecentFingerprints.size >= 3 && user.attendance.length >= 5) {
+      const deviceFrequency = new Map<string, number>();
+      recentFingerprints.forEach(fp => {
+        deviceFrequency.set(fp, (deviceFrequency.get(fp) || 0) + 1);
+      });
+      
+      // If no device is used more than twice, it's suspicious
+      const maxUsage = Math.max(...Array.from(deviceFrequency.values()));
+      if (maxUsage <= 2 && uniqueRecentFingerprints.size >= 3) {
+        riskScore += 30;
+        reasons.push('Device switching pattern suggests credential sharing');
+      }
+    }
+
+    const isValid = riskScore < 60; // Lowered threshold for stricter validation
 
     return {
       isValid,
       isNewDevice,
       riskScore: Math.min(riskScore, 100),
+      reasons: reasons.length > 0 ? reasons : [],
     };
   }
 
@@ -368,12 +467,14 @@ export class AntiProxyService {
 
   /**
    * Track suspicious attendance attempts
+   * Enhanced with precise flagging
    */
   async trackSuspiciousAttempt(
     studentId: string,
     sessionId: string,
     riskScore: number,
-    deviceFingerprint?: string
+    deviceFingerprint?: string,
+    validationReasons?: string[]
   ): Promise<SuspiciousAttemptResult> {
     const key = `${studentId}-${sessionId}`;
     const now = new Date();
@@ -381,18 +482,50 @@ export class AntiProxyService {
     // Get existing attempts for this student-session combination
     const existingAttempts = this.suspiciousAttempts.get(key) || [];
     
-    // Generate more comprehensive reasons based on risk score and patterns
+    // Generate precise reasons based on risk score, validation reasons, and patterns
     const reasons: string[] = [];
     
-    // Device-related reasons
-    if (riskScore > 20) reasons.push('New device detected');
-    if (riskScore > 40) reasons.push('Multiple device usage');
-    if (riskScore > 60) reasons.push('Suspicious location');
-    if (riskScore > 80) reasons.push('High risk patterns');
+    // Use validation reasons if provided (more precise)
+    if (validationReasons && validationReasons.length > 0) {
+      reasons.push(...validationReasons);
+    } else {
+      // Fallback to risk-score based reasons (less precise)
+      if (riskScore >= 50) {
+        reasons.push('Credential sharing detected');
+      } else if (riskScore >= 40) {
+        reasons.push('Same device used by multiple students');
+      } else if (riskScore >= 30) {
+        reasons.push('Multiple device usage detected');
+      } else if (riskScore >= 25) {
+        reasons.push('New device detected');
+      }
+    }
     
     // Add attempt-specific reasons
-    if (existingAttempts.length > 0) {
+    if (existingAttempts.length >= 1) {
       reasons.push('Repeated suspicious attempts');
+    }
+    
+    // Check for credential sharing pattern: same device used for multiple students in same session
+    if (deviceFingerprint) {
+      const simultaneousUsers = await this.prisma.attendance.findMany({
+        where: {
+          deviceFingerprint: deviceFingerprint,
+          sessionId: sessionId,
+          studentId: { not: studentId },
+          timestamp: {
+            gte: new Date(Date.now() - 10 * 60 * 1000), // Within last 10 minutes
+          },
+        },
+        select: {
+          studentId: true,
+        },
+        distinct: ['studentId'],
+      });
+
+      if (simultaneousUsers.length > 0 && !reasons.some(r => r.includes('Credential sharing'))) {
+        reasons.push(`Credential sharing: Same device used by ${simultaneousUsers.length + 1} student(s) in this session`);
+      }
     }
     
     // Create new attempt record
@@ -402,7 +535,7 @@ export class AntiProxyService {
       riskScore,
       timestamp: now,
       deviceFingerprint: deviceFingerprint || '',
-      reasons,
+      reasons: [...new Set(reasons)], // Remove duplicates
     };
     
     // Add to attempts (keep only last 10 attempts for better tracking)
@@ -410,11 +543,11 @@ export class AntiProxyService {
     this.suspiciousAttempts.set(key, updatedAttempts);
     
     // Calculate total risk score based on all attempts
-    const totalRiskScore = Math.min(100, riskScore + (existingAttempts.length * 10));
+    const totalRiskScore = Math.min(100, riskScore + (existingAttempts.length * 8));
     
     return {
       attemptCount: updatedAttempts.length,
-      reasons,
+      reasons: [...new Set(reasons)], // Return unique reasons
     };
   }
 

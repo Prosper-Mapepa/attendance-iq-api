@@ -18,6 +18,11 @@ const swagger_1 = require("@nestjs/swagger");
 const auth_service_1 = require("./auth.service");
 const login_dto_1 = require("./dto/login.dto");
 const register_dto_1 = require("./dto/register.dto");
+const forgot_password_dto_1 = require("./dto/forgot-password.dto");
+const reset_password_dto_1 = require("./dto/reset-password.dto");
+const change_password_dto_1 = require("./dto/change-password.dto");
+const change_email_dto_1 = require("./dto/change-email.dto");
+const verify_email_dto_1 = require("./dto/verify-email.dto");
 const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
 let AuthController = class AuthController {
     constructor(authService) {
@@ -34,8 +39,35 @@ let AuthController = class AuthController {
         return { qrCode: qrCodeDataUrl };
     }
     async getProfile(req) {
-        const user = await this.authService.getUserProfile(req.user.id);
+        const userId = req.user?.id || req.user?.sub;
+        if (!userId) {
+            throw new common_1.UnauthorizedException('User ID not found in token');
+        }
+        const user = await this.authService.getUserProfile(userId);
         return user;
+    }
+    async forgotPassword(forgotPasswordDto) {
+        return this.authService.forgotPassword(forgotPasswordDto);
+    }
+    async resetPassword(resetPasswordDto) {
+        return this.authService.resetPassword(resetPasswordDto);
+    }
+    async changePassword(req, changePasswordDto) {
+        const userId = req.user?.id || req.user?.sub;
+        if (!userId) {
+            throw new common_1.UnauthorizedException('User ID not found in token');
+        }
+        return this.authService.changePassword(userId, changePasswordDto);
+    }
+    async changeEmail(req, changeEmailDto) {
+        const userId = req.user?.id || req.user?.sub;
+        if (!userId) {
+            throw new common_1.UnauthorizedException('User ID not found in token');
+        }
+        return this.authService.changeEmail(userId, changeEmailDto);
+    }
+    async verifyEmail(verifyEmailDto) {
+        return this.authService.verifyEmail(verifyEmailDto);
     }
 };
 exports.AuthController = AuthController;
@@ -80,6 +112,64 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "getProfile", null);
+__decorate([
+    (0, common_1.Post)('forgot-password'),
+    (0, swagger_1.ApiOperation)({ summary: 'Request password reset' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Password reset email sent' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid email' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [forgot_password_dto_1.ForgotPasswordDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "forgotPassword", null);
+__decorate([
+    (0, common_1.Post)('reset-password'),
+    (0, swagger_1.ApiOperation)({ summary: 'Reset password with token' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Password reset successful' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid or expired token' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [reset_password_dto_1.ResetPasswordDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "resetPassword", null);
+__decorate([
+    (0, common_1.Post)('change-password'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({ summary: 'Change password for authenticated user' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Password changed successfully' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid current password' }),
+    (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, change_password_dto_1.ChangePasswordDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "changePassword", null);
+__decorate([
+    (0, common_1.Post)('change-email'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({ summary: 'Request email change for authenticated user' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Verification email sent to new address' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid current password or email already in use' }),
+    (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, change_email_dto_1.ChangeEmailDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "changeEmail", null);
+__decorate([
+    (0, common_1.Post)('verify-email'),
+    (0, swagger_1.ApiOperation)({ summary: 'Verify email change with token' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Email verified and updated successfully' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid or expired verification token' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [verify_email_dto_1.VerifyEmailDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "verifyEmail", null);
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Authentication'),
     (0, common_1.Controller)('auth'),

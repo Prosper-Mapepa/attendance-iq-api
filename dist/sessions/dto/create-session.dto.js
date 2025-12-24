@@ -22,10 +22,17 @@ __decorate([
     __metadata("design:type", String)
 ], CreateSessionDto.prototype, "classId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 15, description: 'Session duration in minutes (5-15 minutes for security)' }),
+    (0, swagger_1.ApiProperty)({ example: 10, description: 'OTP duration in minutes (also serves as clock-in deadline - students must clock in within this time)' }),
     (0, class_validator_1.IsNumber)(),
-    (0, class_validator_1.Min)(5),
-    (0, class_validator_1.Max)(15),
+    (0, class_validator_1.Min)(1),
+    (0, class_validator_1.Max)(30),
     __metadata("design:type", Number)
 ], CreateSessionDto.prototype, "duration", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 90, description: 'Total class duration in minutes' }),
+    (0, class_validator_1.IsNumber)(),
+    (0, class_validator_1.Min)(15),
+    (0, class_validator_1.Max)(240),
+    __metadata("design:type", Number)
+], CreateSessionDto.prototype, "classDuration", void 0);
 //# sourceMappingURL=create-session.dto.js.map

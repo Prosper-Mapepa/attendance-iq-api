@@ -3,6 +3,7 @@ import { AttendanceService } from './attendance.service';
 import { AntiProxyService } from './anti-proxy.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { MarkAttendanceDto } from './dto/mark-attendance.dto';
+import { ClockOutDto } from './dto/clock-out.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 interface AuthenticatedRequest extends Request {
@@ -32,9 +33,24 @@ export class AttendanceController {
     return this.attendanceService.markAttendance(markAttendanceDto, req.user.id);
   }
 
+  @Post('clock-out')
+  async clockOut(@Body() clockOutDto: ClockOutDto, @Request() req: AuthenticatedRequest) {
+    return this.attendanceService.clockOut(clockOutDto, req.user.id);
+  }
+
   @Get('session/:sessionId')
   async getSessionAttendance(@Param('sessionId') sessionId: string, @Request() req: AuthenticatedRequest) {
     return this.attendanceService.getSessionAttendance(sessionId, req.user.id);
+  }
+
+  @Get('session/:sessionId/stats')
+  async getSessionStats(@Param('sessionId') sessionId: string, @Request() req: AuthenticatedRequest) {
+    // Teachers get full stats, students get student-accessible stats
+    if (req.user.role === 'TEACHER') {
+      return this.attendanceService.getSessionStats(sessionId, req.user.id);
+    } else {
+      return this.attendanceService.getSessionStatsForStudent(sessionId, req.user.id);
+    }
   }
 
   @Get('flagged-students/:classId?')

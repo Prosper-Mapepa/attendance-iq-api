@@ -18,6 +18,7 @@ const attendance_service_1 = require("./attendance.service");
 const anti_proxy_service_1 = require("./anti-proxy.service");
 const prisma_service_1 = require("../common/prisma/prisma.service");
 const mark_attendance_dto_1 = require("./dto/mark-attendance.dto");
+const clock_out_dto_1 = require("./dto/clock-out.dto");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 let AttendanceController = class AttendanceController {
     constructor(attendanceService, antiProxyService, prisma) {
@@ -31,8 +32,19 @@ let AttendanceController = class AttendanceController {
     async markAttendance(markAttendanceDto, req) {
         return this.attendanceService.markAttendance(markAttendanceDto, req.user.id);
     }
+    async clockOut(clockOutDto, req) {
+        return this.attendanceService.clockOut(clockOutDto, req.user.id);
+    }
     async getSessionAttendance(sessionId, req) {
         return this.attendanceService.getSessionAttendance(sessionId, req.user.id);
+    }
+    async getSessionStats(sessionId, req) {
+        if (req.user.role === 'TEACHER') {
+            return this.attendanceService.getSessionStats(sessionId, req.user.id);
+        }
+        else {
+            return this.attendanceService.getSessionStatsForStudent(sessionId, req.user.id);
+        }
     }
     async getFlaggedStudents(classId, req) {
         if (req.user.role !== 'TEACHER') {
@@ -77,6 +89,14 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AttendanceController.prototype, "markAttendance", null);
 __decorate([
+    (0, common_1.Post)('clock-out'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [clock_out_dto_1.ClockOutDto, Object]),
+    __metadata("design:returntype", Promise)
+], AttendanceController.prototype, "clockOut", null);
+__decorate([
     (0, common_1.Get)('session/:sessionId'),
     __param(0, (0, common_1.Param)('sessionId')),
     __param(1, (0, common_1.Request)()),
@@ -84,6 +104,14 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], AttendanceController.prototype, "getSessionAttendance", null);
+__decorate([
+    (0, common_1.Get)('session/:sessionId/stats'),
+    __param(0, (0, common_1.Param)('sessionId')),
+    __param(1, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], AttendanceController.prototype, "getSessionStats", null);
 __decorate([
     (0, common_1.Get)('flagged-students/:classId?'),
     __param(0, (0, common_1.Param)('classId')),

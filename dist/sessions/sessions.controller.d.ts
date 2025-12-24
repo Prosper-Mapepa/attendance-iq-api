@@ -25,6 +25,8 @@ export declare class SessionsController {
         classId: string;
         otp: string;
         validUntil: Date;
+        clockInDeadline: Date;
+        classDuration: number;
     })[]>;
     create(createSessionDto: CreateSessionDto, req: AuthenticatedRequest): Promise<{
         class: {
@@ -40,6 +42,8 @@ export declare class SessionsController {
         classId: string;
         otp: string;
         validUntil: Date;
+        clockInDeadline: Date;
+        classDuration: number;
     }>;
     validateOtp(validateOtpDto: ValidateOtpDto): Promise<{
         valid: boolean;
@@ -56,6 +60,8 @@ export declare class SessionsController {
             classId: string;
             otp: string;
             validUntil: Date;
+            clockInDeadline: Date;
+            classDuration: number;
         };
     }>;
 }

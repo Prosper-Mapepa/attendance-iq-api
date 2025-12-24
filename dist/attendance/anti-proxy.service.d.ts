@@ -21,10 +21,11 @@ export declare class AntiProxyService {
     constructor(prisma: PrismaService);
     private extractAttemptCountFromNotes;
     generateDeviceFingerprint(deviceData: DeviceFingerprint): string;
-    validateDeviceFingerprint(userId: string, deviceFingerprint: string): Promise<{
+    validateDeviceFingerprint(userId: string, deviceFingerprint: string, latitude?: number, longitude?: number): Promise<{
         isValid: boolean;
         isNewDevice: boolean;
         riskScore: number;
+        reasons: string[];
     }>;
     generateSMSVerification(studentId: string, sessionId: string, phoneNumber?: string): Promise<{
         code: string;
@@ -48,7 +49,7 @@ export declare class AntiProxyService {
         isValid: boolean;
         confidence: number;
     }>;
-    trackSuspiciousAttempt(studentId: string, sessionId: string, riskScore: number, deviceFingerprint?: string): Promise<SuspiciousAttemptResult>;
+    trackSuspiciousAttempt(studentId: string, sessionId: string, riskScore: number, deviceFingerprint?: string, validationReasons?: string[]): Promise<SuspiciousAttemptResult>;
     flagStudentForInstructor(studentId: string, classId: string, reasons: string[], riskScore: number, attemptCount?: number): Promise<void>;
     getFlaggedStudents(classId?: string): Promise<any[]>;
     getFlaggedStudentsByClasses(classIds: string[]): Promise<any[]>;

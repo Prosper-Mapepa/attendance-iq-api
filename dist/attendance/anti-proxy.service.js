@@ -44,16 +44,19 @@ let AntiProxyService = class AntiProxyService {
         const fingerprintString = JSON.stringify(fingerprintData);
         return crypto.createHash('sha256').update(fingerprintString).digest('hex');
     }
-    async validateDeviceFingerprint(userId, deviceFingerprint) {
+    async validateDeviceFingerprint(userId, deviceFingerprint, latitude, longitude) {
+        const reasons = [];
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
             include: {
                 attendance: {
-                    take: 10,
+                    take: 20,
                     orderBy: { timestamp: 'desc' },
                     select: {
                         deviceFingerprint: true,
                         timestamp: true,
+                        latitude: true,
+                        longitude: true,
                     },
                 },
             },
@@ -62,26 +65,94 @@ let AntiProxyService = class AntiProxyService {
             throw new common_1.BadRequestException('User not found');
         }
         const isNewDevice = !user.attendance.some((record) => record.deviceFingerprint === deviceFingerprint);
+        const sameDeviceUsers = await this.prisma.attendance.findMany({
+            where: {
+                deviceFingerprint: deviceFingerprint,
+                studentId: { not: userId },
+                timestamp: {
+                    gte: new Date(Date.now() - 60 * 60 * 1000),
+                },
+            },
+            select: {
+                studentId: true,
+                timestamp: true,
+            },
+            distinct: ['studentId'],
+        });
         let riskScore = 0;
         if (isNewDevice) {
-            riskScore += 30;
+            riskScore += 25;
+            reasons.push('New device detected');
+        }
+        if (sameDeviceUsers.length > 0) {
+            riskScore += 50;
+            reasons.push(`Same device used by ${sameDeviceUsers.length} other student(s) recently - Possible credential sharing`);
         }
         const recentFingerprints = user.attendance
             .filter((record) => record.timestamp > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000))
             .map((record) => record.deviceFingerprint);
         const uniqueRecentFingerprints = new Set(recentFingerprints);
-        if (uniqueRecentFingerprints.size > 2) {
-            riskScore += 40;
+        if (uniqueRecentFingerprints.size > 3) {
+            riskScore += 35;
+            reasons.push(`Using ${uniqueRecentFingerprints.size} different devices in 7 days`);
         }
-        const recentAttendanceCount = user.attendance.filter((record) => record.timestamp > new Date(Date.now() - 24 * 60 * 60 * 1000)).length;
-        if (recentAttendanceCount > 5) {
+        else if (uniqueRecentFingerprints.size > 2 && !isNewDevice) {
             riskScore += 20;
         }
-        const isValid = riskScore < 70;
+        if (latitude && longitude) {
+            const recentAttendance = user.attendance.filter((record) => record.timestamp > new Date(Date.now() - 30 * 60 * 1000) &&
+                record.latitude &&
+                record.longitude);
+            if (recentAttendance.length > 0) {
+                const calculateDistance = (lat1, lon1, lat2, lon2) => {
+                    const R = 6371e3;
+                    const φ1 = lat1 * Math.PI / 180;
+                    const φ2 = lat2 * Math.PI / 180;
+                    const Δφ = (lat2 - lat1) * Math.PI / 180;
+                    const Δλ = (lon2 - lon1) * Math.PI / 180;
+                    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                        Math.cos(φ1) * Math.cos(φ2) *
+                            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+                    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                    return R * c;
+                };
+                const latestAttendance = recentAttendance[0];
+                if (latestAttendance.latitude && latestAttendance.longitude) {
+                    const distance = calculateDistance(latitude, longitude, latestAttendance.latitude, latestAttendance.longitude);
+                    const timeDiff = Date.now() - latestAttendance.timestamp.getTime();
+                    if (distance > 500 && timeDiff < 5 * 60 * 1000) {
+                        riskScore += 40;
+                        reasons.push(`Impossible location change: ${Math.round(distance)}m in ${Math.round(timeDiff / 1000)}s - Possible credential sharing`);
+                    }
+                    else if (distance > 1000 && timeDiff < 10 * 60 * 1000) {
+                        riskScore += 25;
+                        reasons.push(`Rapid location change: ${Math.round(distance)}m`);
+                    }
+                }
+            }
+        }
+        const recentAttendanceCount = user.attendance.filter((record) => record.timestamp > new Date(Date.now() - 24 * 60 * 60 * 1000)).length;
+        if (recentAttendanceCount > 6) {
+            riskScore += 15;
+            reasons.push(`Unusual activity: ${recentAttendanceCount} clock-ins in 24 hours`);
+        }
+        if (uniqueRecentFingerprints.size >= 3 && user.attendance.length >= 5) {
+            const deviceFrequency = new Map();
+            recentFingerprints.forEach(fp => {
+                deviceFrequency.set(fp, (deviceFrequency.get(fp) || 0) + 1);
+            });
+            const maxUsage = Math.max(...Array.from(deviceFrequency.values()));
+            if (maxUsage <= 2 && uniqueRecentFingerprints.size >= 3) {
+                riskScore += 30;
+                reasons.push('Device switching pattern suggests credential sharing');
+            }
+        }
+        const isValid = riskScore < 60;
         return {
             isValid,
             isNewDevice,
             riskScore: Math.min(riskScore, 100),
+            reasons: reasons.length > 0 ? reasons : [],
         };
     }
     async generateSMSVerification(studentId, sessionId, phoneNumber) {
@@ -218,21 +289,49 @@ let AntiProxyService = class AntiProxyService {
             confidence,
         };
     }
-    async trackSuspiciousAttempt(studentId, sessionId, riskScore, deviceFingerprint) {
+    async trackSuspiciousAttempt(studentId, sessionId, riskScore, deviceFingerprint, validationReasons) {
         const key = `${studentId}-${sessionId}`;
         const now = new Date();
         const existingAttempts = this.suspiciousAttempts.get(key) || [];
         const reasons = [];
-        if (riskScore > 20)
-            reasons.push('New device detected');
-        if (riskScore > 40)
-            reasons.push('Multiple device usage');
-        if (riskScore > 60)
-            reasons.push('Suspicious location');
-        if (riskScore > 80)
-            reasons.push('High risk patterns');
-        if (existingAttempts.length > 0) {
+        if (validationReasons && validationReasons.length > 0) {
+            reasons.push(...validationReasons);
+        }
+        else {
+            if (riskScore >= 50) {
+                reasons.push('Credential sharing detected');
+            }
+            else if (riskScore >= 40) {
+                reasons.push('Same device used by multiple students');
+            }
+            else if (riskScore >= 30) {
+                reasons.push('Multiple device usage detected');
+            }
+            else if (riskScore >= 25) {
+                reasons.push('New device detected');
+            }
+        }
+        if (existingAttempts.length >= 1) {
             reasons.push('Repeated suspicious attempts');
+        }
+        if (deviceFingerprint) {
+            const simultaneousUsers = await this.prisma.attendance.findMany({
+                where: {
+                    deviceFingerprint: deviceFingerprint,
+                    sessionId: sessionId,
+                    studentId: { not: studentId },
+                    timestamp: {
+                        gte: new Date(Date.now() - 10 * 60 * 1000),
+                    },
+                },
+                select: {
+                    studentId: true,
+                },
+                distinct: ['studentId'],
+            });
+            if (simultaneousUsers.length > 0 && !reasons.some(r => r.includes('Credential sharing'))) {
+                reasons.push(`Credential sharing: Same device used by ${simultaneousUsers.length + 1} student(s) in this session`);
+            }
         }
         const newAttempt = {
             studentId,
@@ -240,14 +339,14 @@ let AntiProxyService = class AntiProxyService {
             riskScore,
             timestamp: now,
             deviceFingerprint: deviceFingerprint || '',
-            reasons,
+            reasons: [...new Set(reasons)],
         };
         const updatedAttempts = [...existingAttempts, newAttempt].slice(-10);
         this.suspiciousAttempts.set(key, updatedAttempts);
-        const totalRiskScore = Math.min(100, riskScore + (existingAttempts.length * 10));
+        const totalRiskScore = Math.min(100, riskScore + (existingAttempts.length * 8));
         return {
             attemptCount: updatedAttempts.length,
-            reasons,
+            reasons: [...new Set(reasons)],
         };
     }
     async flagStudentForInstructor(studentId, classId, reasons, riskScore, attemptCount = 1) {

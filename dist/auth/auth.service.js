@@ -16,10 +16,12 @@ const bcrypt = require("bcryptjs");
 const QRCode = require("qrcode");
 const uuid_1 = require("uuid");
 const users_service_1 = require("../users/users.service");
+const email_service_1 = require("../common/email/email.service");
 let AuthService = class AuthService {
-    constructor(usersService, jwtService) {
+    constructor(usersService, jwtService, emailService) {
         this.usersService = usersService;
         this.jwtService = jwtService;
+        this.emailService = emailService;
     }
     async validateUser(email, password) {
         const user = await this.usersService.findByEmail(email);
@@ -83,11 +85,118 @@ let AuthService = class AuthService {
             qrCode: user.qrCode,
         };
     }
+    async forgotPassword(forgotPasswordDto) {
+        const user = await this.usersService.findByEmail(forgotPasswordDto.email);
+        if (!user) {
+            return { message: 'If an account with that email exists, a password reset link has been sent.' };
+        }
+        const resetToken = (0, uuid_1.v4)();
+        const resetTokenExpiry = new Date();
+        resetTokenExpiry.setHours(resetTokenExpiry.getHours() + 1);
+        await this.usersService.updateResetToken(user.id, resetToken, resetTokenExpiry);
+        const frontendUrl = process.env.FRONTEND_URL || process.env.WEB_URL || 'http://localhost:3000';
+        const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
+        const mobileAppUrl = process.env.MOBILE_APP_URL || 'attendiq://reset-password';
+        const mobileDeepLink = `${mobileAppUrl}?token=${resetToken}`;
+        try {
+            await this.emailService.sendPasswordResetEmail(user.email, resetLink, user.name);
+        }
+        catch (error) {
+            console.error('Failed to send password reset email:', error);
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`[DEV] Password reset link for ${user.email}: ${resetLink}`);
+            }
+        }
+        return {
+            message: 'If an account with that email exists, a password reset link has been sent.',
+        };
+    }
+    async resetPassword(resetPasswordDto) {
+        const user = await this.usersService.findByResetToken(resetPasswordDto.token);
+        if (!user) {
+            throw new common_1.BadRequestException('Invalid or expired reset token');
+        }
+        const passwordHash = await bcrypt.hash(resetPasswordDto.newPassword, 10);
+        await this.usersService.updatePassword(user.id, passwordHash);
+        return { message: 'Password has been reset successfully' };
+    }
+    async changePassword(userId, changePasswordDto) {
+        const user = await this.usersService.findOneWithPassword(userId);
+        if (!user) {
+            throw new common_1.NotFoundException('User not found');
+        }
+        const isCurrentPasswordValid = await bcrypt.compare(changePasswordDto.currentPassword, user.passwordHash);
+        if (!isCurrentPasswordValid) {
+            throw new common_1.BadRequestException('Current password is incorrect');
+        }
+        const passwordHash = await bcrypt.hash(changePasswordDto.newPassword, 10);
+        await this.usersService.updatePassword(userId, passwordHash);
+        return { message: 'Password has been changed successfully' };
+    }
+    async changeEmail(userId, changeEmailDto) {
+        const user = await this.usersService.findOneWithPassword(userId);
+        if (!user) {
+            throw new common_1.NotFoundException('User not found');
+        }
+        const isCurrentPasswordValid = await bcrypt.compare(changeEmailDto.currentPassword, user.passwordHash);
+        if (!isCurrentPasswordValid) {
+            throw new common_1.BadRequestException('Current password is incorrect');
+        }
+        if (changeEmailDto.newEmail.toLowerCase() === user.email.toLowerCase()) {
+            throw new common_1.BadRequestException('New email must be different from current email');
+        }
+        const existingUser = await this.usersService.findByEmail(changeEmailDto.newEmail);
+        if (existingUser) {
+            throw new common_1.ConflictException('Email is already in use');
+        }
+        const verificationToken = (0, uuid_1.v4)();
+        const verificationExpiry = new Date();
+        verificationExpiry.setHours(verificationExpiry.getHours() + 24);
+        await this.usersService.updateEmailVerificationToken(userId, changeEmailDto.newEmail.toLowerCase(), verificationToken, verificationExpiry);
+        const frontendUrl = process.env.FRONTEND_URL || process.env.WEB_URL || 'http://localhost:3000';
+        const verificationLink = `${frontendUrl}/verify-email?token=${verificationToken}`;
+        try {
+            await this.emailService.sendEmailVerificationEmail(changeEmailDto.newEmail.toLowerCase(), verificationLink, user.name, user.email);
+        }
+        catch (error) {
+            console.error('Failed to send email verification email:', error);
+            console.error('Email change error details:', {
+                userId,
+                newEmail: changeEmailDto.newEmail,
+                oldEmail: user.email,
+                errorMessage: error.message,
+                errorCode: error.code,
+            });
+            await this.usersService.updateEmailVerificationToken(userId, null, null, null);
+            throw new common_1.BadRequestException(error.message || 'Failed to send verification email. Please check your email configuration and try again.');
+        }
+        return {
+            message: 'Verification email has been sent to your new email address. Please check your inbox and click the verification link.',
+        };
+    }
+    async verifyEmail(verifyEmailDto) {
+        const user = await this.usersService.findByEmailVerificationToken(verifyEmailDto.token);
+        if (!user) {
+            throw new common_1.BadRequestException('Invalid or expired verification token');
+        }
+        const updatedUser = await this.usersService.verifyAndUpdateEmail(user.id);
+        return {
+            message: 'Email has been successfully updated',
+            user: {
+                id: updatedUser.id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                qrCode: updatedUser.qrCode,
+            },
+        };
+    }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [users_service_1.UsersService,
-        jwt_1.JwtService])
+        jwt_1.JwtService,
+        email_service_1.EmailService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

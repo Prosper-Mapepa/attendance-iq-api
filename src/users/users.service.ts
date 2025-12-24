@@ -69,6 +69,18 @@ export class UsersService {
     return user;
   }
 
+  async findOneWithPassword(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        passwordHash: true,
+      },
+    });
+  }
+
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({
       where: { email },
@@ -78,6 +90,101 @@ export class UsersService {
   async findByQRCode(qrCode: string) {
     return this.prisma.user.findUnique({
       where: { qrCode },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        qrCode: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  }
+
+  async findByResetToken(resetToken: string) {
+    return this.prisma.user.findFirst({
+      where: { 
+        resetToken,
+        resetTokenExpiry: {
+          gt: new Date(), // Token not expired
+        },
+      },
+    });
+  }
+
+  async updateResetToken(userId: string, resetToken: string, resetTokenExpiry: Date) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        resetToken,
+        resetTokenExpiry,
+      },
+    });
+  }
+
+  async updatePassword(userId: string, passwordHash: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
+    });
+  }
+
+  async updateEmailVerificationToken(
+    userId: string,
+    pendingEmail: string | null,
+    verificationToken: string | null,
+    verificationExpiry: Date | null,
+  ) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        pendingEmail: pendingEmail || undefined,
+        emailVerificationToken: verificationToken || undefined,
+        emailVerificationExpiry: verificationExpiry || undefined,
+      },
+    });
+  }
+
+  async findByEmailVerificationToken(token: string) {
+    return this.prisma.user.findFirst({
+      where: {
+        emailVerificationToken: token,
+        emailVerificationExpiry: {
+          gt: new Date(), // Token not expired
+        },
+      },
+    });
+  }
+
+  async verifyAndUpdateEmail(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user || !user.pendingEmail || !user.emailVerificationToken) {
+      throw new NotFoundException('No pending email change found');
+    }
+
+    // Check if new email is already taken
+    const existingUser = await this.findByEmail(user.pendingEmail);
+    if (existingUser && existingUser.id !== userId) {
+      throw new NotFoundException('Email is already in use');
+    }
+
+    // Update email and clear verification fields
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: user.pendingEmail,
+        pendingEmail: null,
+        emailVerificationToken: null,
+        emailVerificationExpiry: null,
+      },
       select: {
         id: true,
         name: true,

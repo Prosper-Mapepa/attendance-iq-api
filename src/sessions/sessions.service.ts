@@ -31,7 +31,7 @@ export class SessionsService {
   }
 
   async create(createSessionDto: CreateSessionDto, teacherId: string) {
-    const { classId, duration } = createSessionDto;
+    const { classId, duration, classDuration } = createSessionDto;
 
     // Verify the class belongs to the teacher
     const classExists = await this.prisma.class.findFirst({
@@ -47,13 +47,19 @@ export class SessionsService {
 
     // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const validUntil = new Date(Date.now() + duration * 60 * 1000); // duration in minutes
+    const sessionStartTime = new Date();
+    // OTP duration = clock-in deadline (students must clock in within this time)
+    // OTP expires after the clock-in deadline
+    const clockInDeadline = new Date(sessionStartTime.getTime() + duration * 60 * 1000);
+    const validUntil = clockInDeadline; // OTP expires when clock-in deadline passes
 
     const session = await this.prisma.session.create({
       data: {
         classId,
         otp,
         validUntil,
+        clockInDeadline,
+        classDuration,
       },
       include: {
         class: {

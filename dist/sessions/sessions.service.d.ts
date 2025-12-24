@@ -18,6 +18,8 @@ export declare class SessionsService {
         classId: string;
         otp: string;
         validUntil: Date;
+        clockInDeadline: Date;
+        classDuration: number;
     })[]>;
     create(createSessionDto: CreateSessionDto, teacherId: string): Promise<{
         class: {
@@ -33,6 +35,8 @@ export declare class SessionsService {
         classId: string;
         otp: string;
         validUntil: Date;
+        clockInDeadline: Date;
+        classDuration: number;
     }>;
     validateOtp(validateOtpDto: ValidateOtpDto): Promise<{
         valid: boolean;
@@ -49,6 +53,8 @@ export declare class SessionsService {
             classId: string;
             otp: string;
             validUntil: Date;
+            clockInDeadline: Date;
+            classDuration: number;
         };
     }>;
 }

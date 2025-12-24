@@ -7,10 +7,16 @@ export class CreateSessionDto {
   @IsNotEmpty()
   classId: string;
 
-  @ApiProperty({ example: 15, description: 'Session duration in minutes (5-15 minutes for security)' })
+  @ApiProperty({ example: 10, description: 'OTP duration in minutes (also serves as clock-in deadline - students must clock in within this time)' })
   @IsNumber()
-  @Min(5)
-  @Max(15)
+  @Min(1)
+  @Max(30)
   duration: number;
+
+  @ApiProperty({ example: 90, description: 'Total class duration in minutes' })
+  @IsNumber()
+  @Min(15)
+  @Max(240)
+  classDuration: number;
 }
 

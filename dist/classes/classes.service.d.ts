@@ -178,6 +178,9 @@ export declare class ClassesService {
             sessionId: string;
             studentId: string;
             timestamp: Date;
+            clockInTime: Date | null;
+            clockOutTime: Date | null;
+            status: import("@prisma/client").$Enums.AttendanceStatus;
             location: string | null;
             deviceFingerprint: string | null;
             userAgent: string | null;
