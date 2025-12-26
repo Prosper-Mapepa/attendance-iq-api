@@ -15,12 +15,33 @@ async function bootstrap() {
 
     // Enable CORS
     const corsOrigins = process.env.CORS_ORIGIN 
-      ? process.env.CORS_ORIGIN.split(',')
+      ? process.env.CORS_ORIGIN.split(',').map(origin => {
+          // Normalize origins: trim whitespace and remove trailing slashes
+          return origin.trim().replace(/\/+$/, '');
+        })
       : ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002'];
       
+    console.log('CORS origins configured:', corsOrigins);
+      
     app.enableCors({
-      origin: corsOrigins,
+      origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        // Normalize the incoming origin (remove trailing slash)
+        const normalizedOrigin = origin.replace(/\/+$/, '');
+        
+        // Check if normalized origin is in allowed list
+        if (corsOrigins.includes(normalizedOrigin)) {
+          callback(null, true);
+        } else {
+          console.warn(`CORS blocked origin: ${origin} (normalized: ${normalizedOrigin})`);
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
     });
 
     // Global validation pipe
