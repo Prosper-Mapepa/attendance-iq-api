@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import * as sgMail from '@sendgrid/mail';
 
 @Injectable()
 export class EmailService {
   private transporter: nodemailer.Transporter;
   private isDevelopmentMode: boolean = false;
+  private useSendGridApi: boolean = false;
 
   constructor(private configService: ConfigService) {
     // Initialize email transporter
@@ -27,28 +29,15 @@ export class EmailService {
     }
     
     if (emailProvider === 'sendgrid') {
-      // SendGrid configuration
+      // SendGrid API configuration (NOT SMTP - avoids Railway port blocking)
       const apiKey = this.configService.get<string>('SENDGRID_API_KEY');
       if (!apiKey) {
         throw new Error('SENDGRID_API_KEY is required when EMAIL_PROVIDER=sendgrid');
       }
-      // SendGrid SMTP configuration
-      this.transporter = nodemailer.createTransport({
-        host: 'smtp.sendgrid.net',
-        port: 587,
-        secure: false, // Use TLS
-        auth: {
-          user: 'apikey', // This is literal 'apikey', not your username
-          pass: apiKey, // Your SendGrid API key
-        },
-        connectionTimeout: 10000, // 10 seconds - faster timeout for SendGrid
-        socketTimeout: 10000, // 10 seconds
-        greetingTimeout: 5000, // 5 seconds
-        requireTLS: true,
-        tls: {
-          rejectUnauthorized: false, // Allow self-signed certificates
-        },
-      });
+      // Use SendGrid API SDK (uses HTTPS, not SMTP ports)
+      sgMail.setApiKey(apiKey);
+      this.useSendGridApi = true;
+      console.log('✅ SendGrid API SDK initialized (using HTTPS, not SMTP)');
     } else if (emailProvider === 'ses') {
       // AWS SES configuration
       // Note: For AWS SES, you'll need to install @aws-sdk/client-ses and use it differently
@@ -109,25 +98,34 @@ export class EmailService {
       });
     }
     
-    // Verify connection on startup (only in production)
-    if (nodeEnv === 'production' && !this.isDevelopmentMode) {
+    // Verify connection on startup (only in production, and only for SMTP providers)
+    if (nodeEnv === 'production' && !this.isDevelopmentMode && !this.useSendGridApi) {
       this.verifyConnection().catch((error) => {
         console.error('⚠️ Email service connection verification failed:', error.message);
-        console.error('💡 Recommendation: Use SendGrid (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
+        console.error('💡 Recommendation: Use SendGrid API (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
       });
     }
     
-    console.log(`📧 Email service initialized with provider: ${emailProvider}`);
+    if (this.useSendGridApi) {
+      console.log(`📧 Email service initialized with provider: ${emailProvider} (using SendGrid API SDK)`);
+    } else {
+      console.log(`📧 Email service initialized with provider: ${emailProvider}`);
+    }
   }
 
   private async verifyConnection(): Promise<void> {
+    // Only verify SMTP connections, not SendGrid API
+    if (this.useSendGridApi) {
+      console.log('✅ SendGrid API SDK ready (no connection verification needed)');
+      return;
+    }
     try {
       await this.transporter.verify();
       console.log('✅ Email service connection verified successfully');
     } catch (error: any) {
       console.error('❌ Email service connection verification failed:', error.message);
       if (error.code === 'ETIMEDOUT') {
-        throw new Error('Email service connection timeout. Check your SMTP configuration or switch to SendGrid (EMAIL_PROVIDER=sendgrid)');
+        throw new Error('Email service connection timeout. Check your SMTP configuration or switch to SendGrid API (EMAIL_PROVIDER=sendgrid)');
       }
       throw error;
     }
@@ -137,6 +135,35 @@ export class EmailService {
     const appName = this.configService.get<string>('APP_NAME', 'AttendIQ');
     const fromEmail = this.configService.get<string>('EMAIL_FROM', 'noreply@attendiq.app');
     
+    // Use SendGrid API SDK if configured
+    if (this.useSendGridApi) {
+      try {
+        const msg = {
+          to: email,
+          from: `${appName} <${fromEmail}>`,
+          subject: 'Reset Your Password - AttendIQ',
+          html: this.getPasswordResetEmailTemplate(resetLink, userName || 'User'),
+          text: this.getPasswordResetEmailText(resetLink, userName || 'User'),
+        };
+        
+        await sgMail.send(msg);
+        console.log(`✅ Password reset email sent to ${email} via SendGrid API`);
+        return;
+      } catch (error: any) {
+        console.error('❌ Error sending password reset email via SendGrid API:', error);
+        if (error.response) {
+          console.error('SendGrid API error details:', {
+            statusCode: error.response.statusCode,
+            body: error.response.body,
+            headers: error.response.headers,
+          });
+        }
+        // Don't throw - security best practice
+        return;
+      }
+    }
+    
+    // Fallback to SMTP (nodemailer) for other providers
     const mailOptions = {
       from: `"${appName}" <${fromEmail}>`,
       to: email,
@@ -197,7 +224,7 @@ export class EmailService {
     // If we get here, all retries failed
     console.error('❌ Failed to send password reset email after all retries');
     if (lastError?.code === 'ETIMEDOUT' || lastError?.message?.includes('timeout')) {
-      console.error('💡 Fix: Connection timeout. Switch to SendGrid (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
+      console.error('💡 Fix: Connection timeout. Switch to SendGrid API (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
       console.error('💡 SendGrid setup: https://app.sendgrid.com/settings/api_keys');
     } else if (lastError?.code === 'ECONNREFUSED') {
       console.error('💡 Fix: Connection refused. Check your SMTP_HOST and SMTP_PORT settings');
@@ -219,6 +246,38 @@ export class EmailService {
     const appName = this.configService.get<string>('APP_NAME', 'AttendIQ');
     const fromEmail = this.configService.get<string>('EMAIL_FROM', 'noreply@attendiq.app');
     
+    // Use SendGrid API SDK if configured
+    if (this.useSendGridApi) {
+      try {
+        const msg = {
+          to: newEmail,
+          from: `${appName} <${fromEmail}>`,
+          subject: 'Verify Your New Email Address - AttendIQ',
+          html: this.getEmailVerificationEmailTemplate(verificationLink, userName || 'User', oldEmail),
+          text: this.getEmailVerificationEmailText(verificationLink, userName || 'User', oldEmail),
+        };
+        
+        await sgMail.send(msg);
+        console.log(`✅ Email verification email sent to ${newEmail} via SendGrid API`);
+
+        // Also send notification to old email if provided
+        if (oldEmail && oldEmail !== newEmail) {
+          await this.sendEmailChangeNotificationEmail(oldEmail, newEmail, userName);
+        }
+        return;
+      } catch (error: any) {
+        console.error('❌ Error sending email verification email via SendGrid API:', error);
+        if (error.response) {
+          console.error('SendGrid API error details:', {
+            statusCode: error.response.statusCode,
+            body: error.response.body,
+          });
+        }
+        throw new Error('Failed to send email verification. Please try again later.');
+      }
+    }
+    
+    // Fallback to SMTP (nodemailer) for other providers
     const mailOptions = {
       from: `"${appName}" <${fromEmail}>`,
       to: newEmail,
@@ -256,7 +315,7 @@ export class EmailService {
       });
       // Provide more helpful error message
       if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
-        throw new Error('Email service connection timeout. Please check your SMTP configuration and network connectivity. Consider using SendGrid for more reliable email delivery.');
+        throw new Error('Email service connection timeout. Please check your SMTP configuration and network connectivity. Consider using SendGrid API for more reliable email delivery.');
       }
       if (error.code === 'ECONNREFUSED') {
         throw new Error('Email service connection refused. Please check your SMTP host and port settings.');
@@ -399,6 +458,28 @@ This is an automated message, please do not reply.
     const appName = this.configService.get<string>('APP_NAME', 'AttendIQ');
     const fromEmail = this.configService.get<string>('EMAIL_FROM', 'noreply@attendiq.app');
     
+    // Use SendGrid API SDK if configured
+    if (this.useSendGridApi) {
+      try {
+        const msg = {
+          to: oldEmail,
+          from: `${appName} <${fromEmail}>`,
+          subject: 'Email Change Request - AttendIQ',
+          html: this.getEmailChangeNotificationTemplate(newEmail, userName || 'User'),
+          text: this.getEmailChangeNotificationText(newEmail, userName || 'User'),
+        };
+        
+        await sgMail.send(msg);
+        console.log(`✅ Email change notification sent to ${oldEmail} via SendGrid API`);
+        return;
+      } catch (error) {
+        console.error('❌ Error sending email change notification via SendGrid API:', error);
+        // Don't throw - notification failure shouldn't block the process
+        return;
+      }
+    }
+    
+    // Fallback to SMTP (nodemailer) for other providers
     const mailOptions = {
       from: `"${appName}" <${fromEmail}>`,
       to: oldEmail,
