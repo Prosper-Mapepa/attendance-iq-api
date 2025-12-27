@@ -32,11 +32,21 @@ export class EmailService {
       if (!apiKey) {
         throw new Error('SENDGRID_API_KEY is required when EMAIL_PROVIDER=sendgrid');
       }
+      // SendGrid SMTP configuration
       this.transporter = nodemailer.createTransport({
-        service: 'SendGrid',
+        host: 'smtp.sendgrid.net',
+        port: 587,
+        secure: false, // Use TLS
         auth: {
-          user: 'apikey',
-          pass: apiKey,
+          user: 'apikey', // This is literal 'apikey', not your username
+          pass: apiKey, // Your SendGrid API key
+        },
+        connectionTimeout: 10000, // 10 seconds - faster timeout for SendGrid
+        socketTimeout: 10000, // 10 seconds
+        greetingTimeout: 5000, // 5 seconds
+        requireTLS: true,
+        tls: {
+          rejectUnauthorized: false, // Allow self-signed certificates
         },
       });
     } else if (emailProvider === 'ses') {
@@ -58,6 +68,9 @@ export class EmailService {
           user: accessKey,
           pass: secretKey,
         },
+        connectionTimeout: 60000, // 60 seconds
+        socketTimeout: 60000, // 60 seconds
+        greetingTimeout: 30000, // 30 seconds
       });
     } else {
       // Default SMTP configuration
@@ -83,10 +96,41 @@ export class EmailService {
           user: smtpUser,
           pass: smtpPass,
         },
+        connectionTimeout: 10000, // 10 seconds - reduced from 60s to fail faster
+        socketTimeout: 10000, // 10 seconds
+        greetingTimeout: 5000, // 5 seconds
+        requireTLS: true,
+        tls: {
+          rejectUnauthorized: false, // Allow self-signed certificates
+        },
+        pool: true, // Use connection pooling
+        maxConnections: 5,
+        maxMessages: 100,
+      });
+    }
+    
+    // Verify connection on startup (only in production)
+    if (nodeEnv === 'production' && !this.isDevelopmentMode) {
+      this.verifyConnection().catch((error) => {
+        console.error('⚠️ Email service connection verification failed:', error.message);
+        console.error('💡 Recommendation: Use SendGrid (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
       });
     }
     
     console.log(`📧 Email service initialized with provider: ${emailProvider}`);
+  }
+
+  private async verifyConnection(): Promise<void> {
+    try {
+      await this.transporter.verify();
+      console.log('✅ Email service connection verified successfully');
+    } catch (error: any) {
+      console.error('❌ Email service connection verification failed:', error.message);
+      if (error.code === 'ETIMEDOUT') {
+        throw new Error('Email service connection timeout. Check your SMTP configuration or switch to SendGrid (EMAIL_PROVIDER=sendgrid)');
+      }
+      throw error;
+    }
   }
 
   async sendPasswordResetEmail(email: string, resetLink: string, userName?: string): Promise<void> {
@@ -101,26 +145,69 @@ export class EmailService {
       text: this.getPasswordResetEmailText(resetLink, userName || 'User'),
     };
 
-    try {
-      const info = await this.transporter.sendMail(mailOptions);
-      
-      // If using jsonTransport (development mode), log the email
-      if (this.isDevelopmentMode) {
-        const emailData = JSON.parse(info.message);
-        console.log('\n📧 [DEV] Password Reset Email:');
-        console.log('To:', emailData.to);
-        console.log('Subject:', emailData.subject);
-        console.log('Reset Link:', resetLink);
-        console.log('---\n');
-      } else {
-        console.log(`✅ Password reset email sent to ${email}`, info.messageId);
+    // Retry logic: try up to 3 times with exponential backoff
+    const maxRetries = 3;
+    let lastError: any = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const info = await this.transporter.sendMail(mailOptions);
+        
+        // If using jsonTransport (development mode), log the email
+        if (this.isDevelopmentMode) {
+          const emailData = JSON.parse(info.message);
+          console.log('\n📧 [DEV] Password Reset Email:');
+          console.log('To:', emailData.to);
+          console.log('Subject:', emailData.subject);
+          console.log('Reset Link:', resetLink);
+          console.log('---\n');
+        } else {
+          console.log(`✅ Password reset email sent to ${email}`, info.messageId);
+        }
+        return; // Success, exit function
+      } catch (error: any) {
+        lastError = error;
+        const isTimeout = error.code === 'ETIMEDOUT' || error.message?.includes('timeout');
+        const isConnectionError = error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET';
+        
+        // Don't retry on auth errors or invalid recipient
+        if (error.code === 'EAUTH' || error.code === 'EENVELOPE') {
+          console.error('❌ Error sending password reset email (non-retryable):', error.message);
+          break;
+        }
+
+        // If it's the last attempt or not a retryable error, log and break
+        if (attempt === maxRetries || (!isTimeout && !isConnectionError)) {
+          console.error(`❌ Error sending password reset email (attempt ${attempt}/${maxRetries}):`, error);
+          console.error('Error details:', {
+            code: error.code,
+            command: error.command,
+            message: error.message,
+          });
+          break;
+        }
+
+        // Wait before retrying (exponential backoff: 1s, 2s, 4s)
+        const delay = Math.pow(2, attempt - 1) * 1000;
+        console.warn(`⚠️ Email send failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, error.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
-    } catch (error) {
-      console.error('❌ Error sending password reset email:', error);
-      // Don't throw error to user - security best practice
-      // Just log it for monitoring
-      // In production, you might want to send to error tracking service (Sentry, etc.)
     }
+
+    // If we get here, all retries failed
+    console.error('❌ Failed to send password reset email after all retries');
+    if (lastError?.code === 'ETIMEDOUT' || lastError?.message?.includes('timeout')) {
+      console.error('💡 Fix: Connection timeout. Switch to SendGrid (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
+      console.error('💡 SendGrid setup: https://app.sendgrid.com/settings/api_keys');
+    } else if (lastError?.code === 'ECONNREFUSED') {
+      console.error('💡 Fix: Connection refused. Check your SMTP_HOST and SMTP_PORT settings');
+    } else if (lastError?.code === 'EAUTH') {
+      console.error('💡 Fix: Authentication failed. Check your SMTP_USER and SMTP_PASS credentials');
+    }
+    
+    // Don't throw error to user - security best practice
+    // Just log it for monitoring
+    // In production, you might want to send to error tracking service (Sentry, etc.)
   }
 
   async sendEmailVerificationEmail(
@@ -158,7 +245,7 @@ export class EmailService {
       if (oldEmail && oldEmail !== newEmail) {
         await this.sendEmailChangeNotificationEmail(oldEmail, newEmail, userName);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error sending email verification email:', error);
       console.error('Error details:', {
         to: newEmail,
@@ -167,6 +254,13 @@ export class EmailService {
         errorCode: error.code,
         errorResponse: error.response,
       });
+      // Provide more helpful error message
+      if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+        throw new Error('Email service connection timeout. Please check your SMTP configuration and network connectivity. Consider using SendGrid for more reliable email delivery.');
+      }
+      if (error.code === 'ECONNREFUSED') {
+        throw new Error('Email service connection refused. Please check your SMTP host and port settings.');
+      }
       throw error; // Re-throw for email verification since we need to know if it failed
     }
   }
