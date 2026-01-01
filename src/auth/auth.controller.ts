@@ -108,5 +108,19 @@ export class AuthController {
   async verifyEmail(@Body() verifyEmailDto: VerifyEmailDto) {
     return this.authService.verifyEmail(verifyEmailDto);
   }
+
+  @Post('delete-account')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete authenticated user account' })
+  @ApiResponse({ status: 200, description: 'Account deleted successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async deleteAccount(@Request() req) {
+    const userId = req.user?.id || req.user?.sub;
+    if (!userId) {
+      throw new UnauthorizedException('User ID not found in token');
+    }
+    return this.authService.deleteAccount(userId);
+  }
 }
 

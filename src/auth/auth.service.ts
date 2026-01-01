@@ -282,5 +282,14 @@ export class AuthService {
       },
     };
   }
+
+  async deleteAccount(userId: string) {
+    // Delete the user account (this will cascade delete related records)
+    await this.usersService.remove(userId);
+    
+    return {
+      message: 'Account has been successfully deleted',
+    };
+  }
 }
 
