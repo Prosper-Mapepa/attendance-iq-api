@@ -61,4 +61,7 @@ export declare class AuthController {
             qrCode: string;
         };
     }>;
+    deleteAccount(req: any): Promise<{
+        message: string;
+    }>;
 }

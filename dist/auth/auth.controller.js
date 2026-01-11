@@ -69,6 +69,13 @@ let AuthController = class AuthController {
     async verifyEmail(verifyEmailDto) {
         return this.authService.verifyEmail(verifyEmailDto);
     }
+    async deleteAccount(req) {
+        const userId = req.user?.id || req.user?.sub;
+        if (!userId) {
+            throw new common_1.UnauthorizedException('User ID not found in token');
+        }
+        return this.authService.deleteAccount(userId);
+    }
 };
 exports.AuthController = AuthController;
 __decorate([
@@ -170,6 +177,18 @@ __decorate([
     __metadata("design:paramtypes", [verify_email_dto_1.VerifyEmailDto]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "verifyEmail", null);
+__decorate([
+    (0, common_1.Post)('delete-account'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete authenticated user account' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Account deleted successfully' }),
+    (0, swagger_1.ApiResponse)({ status: 401, description: 'Unauthorized' }),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "deleteAccount", null);
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Authentication'),
     (0, common_1.Controller)('auth'),

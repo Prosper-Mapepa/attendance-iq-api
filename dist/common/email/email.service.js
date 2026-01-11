@@ -13,10 +13,12 @@ exports.EmailService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const nodemailer = require("nodemailer");
+const sgMail = require("@sendgrid/mail");
 let EmailService = class EmailService {
     constructor(configService) {
         this.configService = configService;
         this.isDevelopmentMode = false;
+        this.useSendGridApi = false;
         const emailProvider = this.configService.get('EMAIL_PROVIDER', 'smtp');
         const nodeEnv = this.configService.get('NODE_ENV', 'development');
         if (nodeEnv === 'development' && !this.configService.get('SMTP_USER') &&
@@ -34,13 +36,9 @@ let EmailService = class EmailService {
             if (!apiKey) {
                 throw new Error('SENDGRID_API_KEY is required when EMAIL_PROVIDER=sendgrid');
             }
-            this.transporter = nodemailer.createTransport({
-                service: 'SendGrid',
-                auth: {
-                    user: 'apikey',
-                    pass: apiKey,
-                },
-            });
+            sgMail.setApiKey(apiKey);
+            this.useSendGridApi = true;
+            console.log('✅ SendGrid API SDK initialized (using HTTPS, not SMTP)');
         }
         else if (emailProvider === 'ses') {
             const accessKey = this.configService.get('AWS_ACCESS_KEY_ID');
@@ -57,6 +55,9 @@ let EmailService = class EmailService {
                     user: accessKey,
                     pass: secretKey,
                 },
+                connectionTimeout: 60000,
+                socketTimeout: 60000,
+                greetingTimeout: 30000,
             });
         }
         else {
@@ -81,13 +82,76 @@ let EmailService = class EmailService {
                     user: smtpUser,
                     pass: smtpPass,
                 },
+                connectionTimeout: 10000,
+                socketTimeout: 10000,
+                greetingTimeout: 5000,
+                requireTLS: true,
+                tls: {
+                    rejectUnauthorized: false,
+                },
+                pool: true,
+                maxConnections: 5,
+                maxMessages: 100,
             });
         }
-        console.log(`📧 Email service initialized with provider: ${emailProvider}`);
+        if (nodeEnv === 'production' && !this.isDevelopmentMode && !this.useSendGridApi) {
+            this.verifyConnection().catch((error) => {
+                console.error('⚠️ Email service connection verification failed:', error.message);
+                console.error('💡 Recommendation: Use SendGrid API (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
+            });
+        }
+        if (this.useSendGridApi) {
+            console.log(`📧 Email service initialized with provider: ${emailProvider} (using SendGrid API SDK)`);
+        }
+        else {
+            console.log(`📧 Email service initialized with provider: ${emailProvider}`);
+        }
+    }
+    async verifyConnection() {
+        if (this.useSendGridApi) {
+            console.log('✅ SendGrid API SDK ready (no connection verification needed)');
+            return;
+        }
+        try {
+            await this.transporter.verify();
+            console.log('✅ Email service connection verified successfully');
+        }
+        catch (error) {
+            console.error('❌ Email service connection verification failed:', error.message);
+            if (error.code === 'ETIMEDOUT') {
+                throw new Error('Email service connection timeout. Check your SMTP configuration or switch to SendGrid API (EMAIL_PROVIDER=sendgrid)');
+            }
+            throw error;
+        }
     }
     async sendPasswordResetEmail(email, resetLink, userName) {
         const appName = this.configService.get('APP_NAME', 'AttendIQ');
         const fromEmail = this.configService.get('EMAIL_FROM', 'noreply@attendiq.app');
+        if (this.useSendGridApi) {
+            try {
+                const msg = {
+                    to: email,
+                    from: `${appName} <${fromEmail}>`,
+                    subject: 'Reset Your Password - AttendIQ',
+                    html: this.getPasswordResetEmailTemplate(resetLink, userName || 'User'),
+                    text: this.getPasswordResetEmailText(resetLink, userName || 'User'),
+                };
+                await sgMail.send(msg);
+                console.log(`✅ Password reset email sent to ${email} via SendGrid API`);
+                return;
+            }
+            catch (error) {
+                console.error('❌ Error sending password reset email via SendGrid API:', error);
+                if (error.response) {
+                    console.error('SendGrid API error details:', {
+                        statusCode: error.response.statusCode,
+                        body: error.response.body,
+                        headers: error.response.headers,
+                    });
+                }
+                return;
+            }
+        }
         const mailOptions = {
             from: `"${appName}" <${fromEmail}>`,
             to: email,
@@ -95,27 +159,88 @@ let EmailService = class EmailService {
             html: this.getPasswordResetEmailTemplate(resetLink, userName || 'User'),
             text: this.getPasswordResetEmailText(resetLink, userName || 'User'),
         };
-        try {
-            const info = await this.transporter.sendMail(mailOptions);
-            if (this.isDevelopmentMode) {
-                const emailData = JSON.parse(info.message);
-                console.log('\n📧 [DEV] Password Reset Email:');
-                console.log('To:', emailData.to);
-                console.log('Subject:', emailData.subject);
-                console.log('Reset Link:', resetLink);
-                console.log('---\n');
+        const maxRetries = 3;
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                const info = await this.transporter.sendMail(mailOptions);
+                if (this.isDevelopmentMode) {
+                    const emailData = JSON.parse(info.message);
+                    console.log('\n📧 [DEV] Password Reset Email:');
+                    console.log('To:', emailData.to);
+                    console.log('Subject:', emailData.subject);
+                    console.log('Reset Link:', resetLink);
+                    console.log('---\n');
+                }
+                else {
+                    console.log(`✅ Password reset email sent to ${email}`, info.messageId);
+                }
+                return;
             }
-            else {
-                console.log(`✅ Password reset email sent to ${email}`, info.messageId);
+            catch (error) {
+                lastError = error;
+                const isTimeout = error.code === 'ETIMEDOUT' || error.message?.includes('timeout');
+                const isConnectionError = error.code === 'ECONNREFUSED' || error.code === 'ECONNRESET';
+                if (error.code === 'EAUTH' || error.code === 'EENVELOPE') {
+                    console.error('❌ Error sending password reset email (non-retryable):', error.message);
+                    break;
+                }
+                if (attempt === maxRetries || (!isTimeout && !isConnectionError)) {
+                    console.error(`❌ Error sending password reset email (attempt ${attempt}/${maxRetries}):`, error);
+                    console.error('Error details:', {
+                        code: error.code,
+                        command: error.command,
+                        message: error.message,
+                    });
+                    break;
+                }
+                const delay = Math.pow(2, attempt - 1) * 1000;
+                console.warn(`⚠️ Email send failed (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, error.message);
+                await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
-        catch (error) {
-            console.error('❌ Error sending password reset email:', error);
+        console.error('❌ Failed to send password reset email after all retries');
+        if (lastError?.code === 'ETIMEDOUT' || lastError?.message?.includes('timeout')) {
+            console.error('💡 Fix: Connection timeout. Switch to SendGrid API (EMAIL_PROVIDER=sendgrid) for more reliable email delivery on Railway');
+            console.error('💡 SendGrid setup: https://app.sendgrid.com/settings/api_keys');
+        }
+        else if (lastError?.code === 'ECONNREFUSED') {
+            console.error('💡 Fix: Connection refused. Check your SMTP_HOST and SMTP_PORT settings');
+        }
+        else if (lastError?.code === 'EAUTH') {
+            console.error('💡 Fix: Authentication failed. Check your SMTP_USER and SMTP_PASS credentials');
         }
     }
     async sendEmailVerificationEmail(newEmail, verificationLink, userName, oldEmail) {
         const appName = this.configService.get('APP_NAME', 'AttendIQ');
         const fromEmail = this.configService.get('EMAIL_FROM', 'noreply@attendiq.app');
+        if (this.useSendGridApi) {
+            try {
+                const msg = {
+                    to: newEmail,
+                    from: `${appName} <${fromEmail}>`,
+                    subject: 'Verify Your New Email Address - AttendIQ',
+                    html: this.getEmailVerificationEmailTemplate(verificationLink, userName || 'User', oldEmail),
+                    text: this.getEmailVerificationEmailText(verificationLink, userName || 'User', oldEmail),
+                };
+                await sgMail.send(msg);
+                console.log(`✅ Email verification email sent to ${newEmail} via SendGrid API`);
+                if (oldEmail && oldEmail !== newEmail) {
+                    await this.sendEmailChangeNotificationEmail(oldEmail, newEmail, userName);
+                }
+                return;
+            }
+            catch (error) {
+                console.error('❌ Error sending email verification email via SendGrid API:', error);
+                if (error.response) {
+                    console.error('SendGrid API error details:', {
+                        statusCode: error.response.statusCode,
+                        body: error.response.body,
+                    });
+                }
+                throw new Error('Failed to send email verification. Please try again later.');
+            }
+        }
         const mailOptions = {
             from: `"${appName}" <${fromEmail}>`,
             to: newEmail,
@@ -149,6 +274,12 @@ let EmailService = class EmailService {
                 errorCode: error.code,
                 errorResponse: error.response,
             });
+            if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+                throw new Error('Email service connection timeout. Please check your SMTP configuration and network connectivity. Consider using SendGrid API for more reliable email delivery.');
+            }
+            if (error.code === 'ECONNREFUSED') {
+                throw new Error('Email service connection refused. Please check your SMTP host and port settings.');
+            }
             throw error;
         }
     }
@@ -279,6 +410,24 @@ This is an automated message, please do not reply.
     async sendEmailChangeNotificationEmail(oldEmail, newEmail, userName) {
         const appName = this.configService.get('APP_NAME', 'AttendIQ');
         const fromEmail = this.configService.get('EMAIL_FROM', 'noreply@attendiq.app');
+        if (this.useSendGridApi) {
+            try {
+                const msg = {
+                    to: oldEmail,
+                    from: `${appName} <${fromEmail}>`,
+                    subject: 'Email Change Request - AttendIQ',
+                    html: this.getEmailChangeNotificationTemplate(newEmail, userName || 'User'),
+                    text: this.getEmailChangeNotificationText(newEmail, userName || 'User'),
+                };
+                await sgMail.send(msg);
+                console.log(`✅ Email change notification sent to ${oldEmail} via SendGrid API`);
+                return;
+            }
+            catch (error) {
+                console.error('❌ Error sending email change notification via SendGrid API:', error);
+                return;
+            }
+        }
         const mailOptions = {
             from: `"${appName}" <${fromEmail}>`,
             to: oldEmail,

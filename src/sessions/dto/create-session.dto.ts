@@ -13,10 +13,9 @@ export class CreateSessionDto {
   @Max(30)
   duration: number;
 
-  @ApiProperty({ example: 90, description: 'Total class duration in minutes' })
+  @ApiProperty({ example: 90, description: 'Total class duration in minutes (must be greater than 0)' })
   @IsNumber()
-  @Min(15)
-  @Max(240)
+  @Min(0.01, { message: 'classDuration must be greater than 0' })
   classDuration: number;
 }
 

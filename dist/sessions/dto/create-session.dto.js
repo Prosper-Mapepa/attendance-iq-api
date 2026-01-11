@@ -29,10 +29,9 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateSessionDto.prototype, "duration", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 90, description: 'Total class duration in minutes' }),
+    (0, swagger_1.ApiProperty)({ example: 90, description: 'Total class duration in minutes (must be greater than 0)' }),
     (0, class_validator_1.IsNumber)(),
-    (0, class_validator_1.Min)(15),
-    (0, class_validator_1.Max)(240),
+    (0, class_validator_1.Min)(0.01, { message: 'classDuration must be greater than 0' }),
     __metadata("design:type", Number)
 ], CreateSessionDto.prototype, "classDuration", void 0);
 //# sourceMappingURL=create-session.dto.js.map

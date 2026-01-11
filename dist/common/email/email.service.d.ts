@@ -3,7 +3,9 @@ export declare class EmailService {
     private configService;
     private transporter;
     private isDevelopmentMode;
+    private useSendGridApi;
     constructor(configService: ConfigService);
+    private verifyConnection;
     sendPasswordResetEmail(email: string, resetLink: string, userName?: string): Promise<void>;
     sendEmailVerificationEmail(newEmail: string, verificationLink: string, userName?: string, oldEmail?: string): Promise<void>;
     private getEmailVerificationEmailTemplate;

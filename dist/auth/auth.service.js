@@ -191,6 +191,12 @@ let AuthService = class AuthService {
             },
         };
     }
+    async deleteAccount(userId) {
+        await this.usersService.remove(userId);
+        return {
+            message: 'Account has been successfully deleted',
+        };
+    }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
