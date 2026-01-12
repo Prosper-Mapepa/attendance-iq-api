@@ -122,5 +122,18 @@ export class AuthController {
     }
     return this.authService.deleteAccount(userId);
   }
+
+  @Post('create-admin')
+  @ApiOperation({ summary: 'Create production admin user (one-time use)' })
+  @ApiResponse({ status: 201, description: 'Admin user created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid secret or admin already exists' })
+  async createAdmin(@Body() body: { secret: string }) {
+    // Simple secret check for one-time use
+    const expectedSecret = process.env.ADMIN_CREATE_SECRET || 'create-admin-2025';
+    if (body.secret !== expectedSecret) {
+      throw new UnauthorizedException('Invalid secret');
+    }
+    return this.authService.createProductionAdmin();
+  }
 }
 

@@ -291,5 +291,60 @@ export class AuthService {
       message: 'Account has been successfully deleted',
     };
   }
+
+  async createProductionAdmin() {
+    const adminEmail = 'mapepaprosper76@gmail.com';
+    const adminPassword = 'BreAkThr0ugHinGOD@0140x!@!';
+    const adminName = 'System Administrator';
+
+    // Check if admin already exists
+    const existingAdmin = await this.usersService.findByEmail(adminEmail);
+
+    if (existingAdmin) {
+      // Update to ADMIN role if not already
+      if (existingAdmin.role !== 'ADMIN') {
+        await this.usersService.update(existingAdmin.id, { role: 'ADMIN' } as any);
+        return {
+          message: 'Admin user already existed, role updated to ADMIN',
+          user: {
+            id: existingAdmin.id,
+            email: existingAdmin.email,
+            role: 'ADMIN',
+          },
+        };
+      }
+      return {
+        message: 'Admin user already exists',
+        user: {
+          id: existingAdmin.id,
+          email: existingAdmin.email,
+          role: existingAdmin.role,
+        },
+      };
+    }
+
+    // Create admin user
+    const qrCode = uuidv4();
+    const admin = await this.usersService.create({
+      name: adminName,
+      email: adminEmail,
+      password: adminPassword,
+      role: 'ADMIN',
+      qrCode,
+    } as any);
+
+    return {
+      message: 'Production admin user created successfully',
+      user: {
+        id: admin.id,
+        email: admin.email,
+        role: admin.role,
+      },
+      credentials: {
+        email: adminEmail,
+        password: adminPassword,
+      },
+    };
+  }
 }
 
