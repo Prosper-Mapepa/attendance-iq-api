@@ -135,6 +135,7 @@ model FlaggedStudent {
 enum UserRole {
   TEACHER
   STUDENT
+  ADMIN
 }
 
 enum FlagStatus {

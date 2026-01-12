@@ -1,9 +1,10 @@
-import { IsEmail, IsString, MinLength, IsEnum } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsEnum, Matches } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum UserRole {
   TEACHER = 'TEACHER',
   STUDENT = 'STUDENT',
+  ADMIN = 'ADMIN',
 }
 
 export class RegisterDto {
@@ -11,8 +12,11 @@ export class RegisterDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ example: 'user@example.com' })
+  @ApiProperty({ example: 'user@cmich.edu' })
   @IsEmail()
+  @Matches(/^[^\s@]+@cmich\.edu$/, {
+    message: 'Email must be from @cmich.edu domain',
+  })
   email: string;
 
   @ApiProperty({ example: 'password123' })
