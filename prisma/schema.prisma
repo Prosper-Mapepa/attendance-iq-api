@@ -43,7 +43,7 @@ model Class {
   teacherId   String
   latitude    Float?
   longitude   Float?
-  locationRadius Float? @default(50) // meters
+  locationRadius Float? @default(9.144) // meters (default: 30 feet for precise verification)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

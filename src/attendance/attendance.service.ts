@@ -201,7 +201,7 @@ export class AttendanceService {
         longitude,
         session.class.latitude,
         session.class.longitude,
-        session.class.locationRadius || 50
+        session.class.locationRadius || 9.144 // Default: 30 feet
       );
 
       if (!isLocationValid) {
@@ -398,7 +398,7 @@ export class AttendanceService {
         longitude,
         session.class.latitude,
         session.class.longitude,
-        session.class.locationRadius || 50
+        session.class.locationRadius || 9.144 // Default: 30 feet
       );
 
       if (!isLocationValid) {
@@ -413,7 +413,7 @@ export class AttendanceService {
         const distance = R * c;
         
         throw new BadRequestException(
-          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 0)}`
+          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 9.144)}`
         );
       }
     }
