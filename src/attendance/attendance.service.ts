@@ -124,7 +124,6 @@ export class AttendanceService {
     }
 
     // Check if clock-in deadline has passed
-    const currentTime = new Date();
     if (session.clockInDeadline && currentTime > session.clockInDeadline) {
       throw new BadRequestException('Clock-in deadline has passed. You can no longer clock in for this session.');
     }
