@@ -14,5 +14,15 @@ export class ClockOutDto {
   @ApiPropertyOptional({ example: -84.123456 })
   @IsOptional()
   longitude?: number;
+
+  @ApiPropertyOptional({ example: 'Mozilla/5.0...' })
+  @IsOptional()
+  @IsString()
+  userAgent?: string;
+
+  @ApiPropertyOptional({ example: 'Android 14' })
+  @IsOptional()
+  @IsString()
+  osVersion?: string;
 }
 

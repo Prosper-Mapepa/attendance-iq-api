@@ -239,23 +239,25 @@ export class AttendanceService {
         longitude,
         session.class.latitude,
         session.class.longitude,
-        session.class.locationRadius || 30 // Default: 30 feet (stored in feet now)
+        session.class.locationRadius || 30, // Default: 30 feet (stored in feet now)
+        userAgent, // Pass userAgent to detect Android devices
+        osVersion  // Pass osVersion to detect Android devices
       );
 
       if (!isLocationValid) {
         // Calculate actual distance using Haversine formula
         const R = 6371e3; // Earth's radius in meters
-        const φ1 = (latitude * Math.PI) / 180;
-        const φ2 = (session.class.latitude * Math.PI) / 180;
-        const Δφ = ((session.class.latitude - latitude) * Math.PI) / 180;
-        const Δλ = ((session.class.longitude - longitude) * Math.PI) / 180;
-        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-          Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const ?1 = (latitude * Math.PI) / 180;
+        const ?2 = (session.class.latitude * Math.PI) / 180;
+        const ?? = ((session.class.latitude - latitude) * Math.PI) / 180;
+        const ?? = ((session.class.longitude - longitude) * Math.PI) / 180;
+        const a = Math.sin(?? / 2) * Math.sin(?? / 2) +
+          Math.cos(?1) * Math.cos(?2) * Math.sin(?? / 2) * Math.sin(?? / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const distance = R * c;
         
         throw new BadRequestException(
-          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 30)}`
+          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 30, userAgent, osVersion)}`
         );
       }
     }
@@ -360,7 +362,7 @@ export class AttendanceService {
   }
 
   async clockOut(clockOutDto: ClockOutDto, userId: string) {
-    const { otp: rawOtp, latitude, longitude } = clockOutDto;
+    const { otp: rawOtp, latitude, longitude, userAgent, osVersion } = clockOutDto;
 
     // Extract OTP from various formats (handles JSON from QR codes, plain OTP, etc.)
     let otp = rawOtp?.trim() || '';
@@ -471,22 +473,24 @@ export class AttendanceService {
         longitude,
         session.class.latitude,
         session.class.longitude,
-        session.class.locationRadius || 30 // Default: 30 feet (stored in feet now)
+        session.class.locationRadius || 30, // Default: 30 feet (stored in feet now)
+        userAgent, // Pass userAgent to detect Android devices
+        osVersion  // Pass osVersion to detect Android devices
       );
 
       if (!isLocationValid) {
         const R = 6371e3;
-        const φ1 = (latitude * Math.PI) / 180;
-        const φ2 = (session.class.latitude * Math.PI) / 180;
-        const Δφ = ((session.class.latitude - latitude) * Math.PI) / 180;
-        const Δλ = ((session.class.longitude - longitude) * Math.PI) / 180;
-        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-          Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const ?1 = (latitude * Math.PI) / 180;
+        const ?2 = (session.class.latitude * Math.PI) / 180;
+        const ?? = ((session.class.latitude - latitude) * Math.PI) / 180;
+        const ?? = ((session.class.longitude - longitude) * Math.PI) / 180;
+        const a = Math.sin(?? / 2) * Math.sin(?? / 2) +
+          Math.cos(?1) * Math.cos(?2) * Math.sin(?? / 2) * Math.sin(?? / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const distance = R * c;
         
         throw new BadRequestException(
-          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 30)}`
+          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 30, userAgent, osVersion)}`
         );
       }
     }
