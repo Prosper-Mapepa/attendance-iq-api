@@ -77,13 +77,50 @@ export class SessionsService {
   }
 
   async validateOtp(validateOtpDto: ValidateOtpDto) {
-    const { otp } = validateOtpDto;
+    const { otp: rawOtp } = validateOtpDto;
+    const currentTime = new Date();
+
+    // Extract OTP from various formats (handles JSON from QR codes, plain OTP, etc.)
+    let otp = rawOtp?.trim() || '';
+    
+    // Try to parse as JSON first (QR codes from web app contain JSON)
+    try {
+      const jsonData = JSON.parse(rawOtp);
+      if (jsonData.otp && typeof jsonData.otp === 'string') {
+        otp = jsonData.otp.trim();
+      }
+    } catch (e) {
+      // Not JSON, try other formats
+      if (rawOtp.includes('=')) {
+        try {
+          const urlParams = new URLSearchParams(rawOtp.split('?')[1] || '');
+          const urlOtp = urlParams.get('otp') || urlParams.get('OTP');
+          if (urlOtp) {
+            otp = urlOtp.trim();
+          }
+        } catch (e) {
+          // Ignore URL parsing errors
+        }
+      }
+      
+      // Extract 6-digit number if OTP is embedded in text
+      const digitMatch = otp.match(/\d{6}/);
+      if (digitMatch && digitMatch[0]) {
+        otp = digitMatch[0];
+      }
+    }
+
+    // Validate OTP format (should be 6 digits)
+    if (!/^\d{6}$/.test(otp)) {
+      throw new BadRequestException('Invalid OTP format. OTP must be a 6-digit number.');
+    }
 
     const session = await this.prisma.session.findFirst({
       where: {
         otp,
+        // OTP is valid if validUntil hasn't passed
         validUntil: {
-          gt: new Date(),
+          gt: currentTime,
         },
       },
       include: {
@@ -99,6 +136,11 @@ export class SessionsService {
 
     if (!session) {
       throw new BadRequestException('Invalid or expired OTP');
+    }
+
+    // Also check clock-in deadline for clock-in operations
+    if (session.clockInDeadline && currentTime > session.clockInDeadline) {
+      throw new BadRequestException('Clock-in deadline has passed. OTP is no longer valid for clock-in.');
     }
 
     return {

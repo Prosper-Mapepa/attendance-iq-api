@@ -50,9 +50,13 @@ export function verifyLocation(
   // Convert radius from feet to meters for distance calculation
   const radiusInMeters = radius * 0.3048; // 1 foot = 0.3048 meters
   
-  // Add GPS accuracy tolerance (typically 5-10 meters for mobile devices, especially Android)
-  // Using 10 meters (32.8 feet) tolerance to account for GPS inaccuracy
-  const gpsTolerance = 10; // meters
+  // Add GPS accuracy tolerance for mobile devices, especially Android
+  // Android devices can have GPS accuracy issues of 10-25 meters (32-82 feet) in buildings
+  // Use percentage-based tolerance: 25% of radius + fixed 20 meters minimum
+  // This ensures larger radii get proportionally more tolerance and accounts for indoor GPS issues
+  const baseTolerance = 20; // meters (65.6 feet) - minimum tolerance for Android GPS inaccuracy indoors
+  const percentageTolerance = radiusInMeters * 0.25; // 25% of radius
+  const gpsTolerance = Math.max(baseTolerance, percentageTolerance); // Use whichever is larger
   
   const distance = calculateDistance(studentLat, studentLng, classLat, classLng);
   
@@ -70,7 +74,10 @@ export function getLocationAccuracyMessage(distance: number, radius: number): st
   // Convert distance to feet for display (1 meter = 3.28084 feet)
   const distanceFeet = distance * 3.28084;
   const radiusInMeters = radius * 0.3048; // Convert radius from feet to meters
-  const gpsTolerance = 10; // meters
+  // Use same tolerance calculation as verifyLocation
+  const baseTolerance = 20; // meters (65.6 feet)
+  const percentageTolerance = radiusInMeters * 0.25; // 25% of radius
+  const gpsTolerance = Math.max(baseTolerance, percentageTolerance);
   
   if (distance <= (radiusInMeters + gpsTolerance)) {
     return `Location verified (${Math.round(distanceFeet)}ft from class, within ${Math.round(radius)}ft radius)`;

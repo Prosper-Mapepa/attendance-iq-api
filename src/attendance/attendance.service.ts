@@ -39,7 +39,7 @@ export class AttendanceService {
 
   async markAttendance(markAttendanceDto: MarkAttendanceDto, userId: string) {
     const { 
-      otp, 
+      otp: rawOtp, 
       latitude, 
       longitude, 
       userAgent, 
@@ -54,12 +54,50 @@ export class AttendanceService {
       smsVerificationCode
     } = markAttendanceDto;
 
+    // Extract OTP from various formats (handles JSON from QR codes, plain OTP, etc.)
+    let otp = rawOtp?.trim() || '';
+    
+    // Try to parse as JSON first (QR codes from web app contain JSON)
+    try {
+      const jsonData = JSON.parse(rawOtp);
+      if (jsonData.otp && typeof jsonData.otp === 'string') {
+        otp = jsonData.otp.trim();
+      }
+    } catch (e) {
+      // Not JSON, try other formats
+      // Handle URL format like "attendance?otp=123456"
+      if (rawOtp.includes('=')) {
+        try {
+          const urlParams = new URLSearchParams(rawOtp.split('?')[1] || '');
+          const urlOtp = urlParams.get('otp') || urlParams.get('OTP');
+          if (urlOtp) {
+            otp = urlOtp.trim();
+          }
+        } catch (e) {
+          // Ignore URL parsing errors
+        }
+      }
+      
+      // Extract 6-digit number if OTP is embedded in text
+      const digitMatch = otp.match(/\d{6}/);
+      if (digitMatch && digitMatch[0]) {
+        otp = digitMatch[0];
+      }
+    }
+
+    // Validate OTP format (should be 6 digits)
+    if (!/^\d{6}$/.test(otp)) {
+      throw new BadRequestException('Invalid OTP format. OTP must be a 6-digit number.');
+    }
+
     // Find the session by OTP
+    const currentTime = new Date();
     const session = await this.prisma.session.findFirst({
       where: {
         otp,
+        // OTP must be valid (validUntil not passed)
         validUntil: {
-          gt: new Date(),
+          gt: currentTime,
         },
       },
       include: {
@@ -68,7 +106,7 @@ export class AttendanceService {
     });
 
     if (!session) {
-      throw new BadRequestException('Invalid or expired OTP');
+      throw new BadRequestException('Invalid or expired OTP. Please check the QR code and try again.');
     }
 
     // Check if student is enrolled in the class
@@ -323,7 +361,42 @@ export class AttendanceService {
   }
 
   async clockOut(clockOutDto: ClockOutDto, userId: string) {
-    const { otp, latitude, longitude } = clockOutDto;
+    const { otp: rawOtp, latitude, longitude } = clockOutDto;
+
+    // Extract OTP from various formats (handles JSON from QR codes, plain OTP, etc.)
+    let otp = rawOtp?.trim() || '';
+    
+    // Try to parse as JSON first (QR codes from web app contain JSON)
+    try {
+      const jsonData = JSON.parse(rawOtp);
+      if (jsonData.otp && typeof jsonData.otp === 'string') {
+        otp = jsonData.otp.trim();
+      }
+    } catch (e) {
+      // Not JSON, try other formats
+      if (rawOtp.includes('=')) {
+        try {
+          const urlParams = new URLSearchParams(rawOtp.split('?')[1] || '');
+          const urlOtp = urlParams.get('otp') || urlParams.get('OTP');
+          if (urlOtp) {
+            otp = urlOtp.trim();
+          }
+        } catch (e) {
+          // Ignore URL parsing errors
+        }
+      }
+      
+      // Extract 6-digit number if OTP is embedded in text
+      const digitMatch = otp.match(/\d{6}/);
+      if (digitMatch && digitMatch[0]) {
+        otp = digitMatch[0];
+      }
+    }
+
+    // Validate OTP format (should be 6 digits)
+    if (!/^\d{6}$/.test(otp)) {
+      throw new BadRequestException('Invalid OTP format. OTP must be a 6-digit number.');
+    }
 
     // Find the session by OTP
     const session = await this.prisma.session.findFirst({

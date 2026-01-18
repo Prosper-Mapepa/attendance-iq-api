@@ -1,11 +1,10 @@
-import { IsString, IsNotEmpty, Length } from 'class-validator';
+import { IsString, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class ValidateOtpDto {
-  @ApiProperty({ example: '123456' })
+  @ApiProperty({ example: '123456', description: 'OTP code (6 digits) or JSON string from QR code containing otp field' })
   @IsString()
   @IsNotEmpty()
-  @Length(6, 6)
-  otp: string;
+  otp: string; // Can be plain OTP or JSON string - will be parsed in service
 }
 
