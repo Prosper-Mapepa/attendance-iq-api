@@ -81,38 +81,62 @@ export class SessionsService {
     const currentTime = new Date();
 
     // Extract OTP from various formats (handles JSON from QR codes, plain OTP, etc.)
+    // This robust extraction handles multiple formats to prevent intermittent failures
     let otp = rawOtp?.trim() || '';
+    let extractedOtp: string | null = null;
     
-    // Try to parse as JSON first (QR codes from web app contain JSON)
+    // Method 1: Try to parse as JSON first (QR codes from web app contain JSON)
     try {
       const jsonData = JSON.parse(rawOtp);
       if (jsonData.otp && typeof jsonData.otp === 'string') {
-        otp = jsonData.otp.trim();
+        extractedOtp = jsonData.otp.trim();
+      } else if (typeof jsonData === 'string' && /^\d{6}$/.test(jsonData)) {
+        // Sometimes the JSON itself is just the OTP string
+        extractedOtp = jsonData.trim();
       }
     } catch (e) {
-      // Not JSON, try other formats
-      if (rawOtp.includes('=')) {
-        try {
+      // Not valid JSON, continue to other methods
+    }
+    
+    // Method 2: Handle URL format like "attendance?otp=123456" or "otp=123456"
+    if (!extractedOtp && rawOtp.includes('=')) {
+      try {
+        // Try as full URL
+        if (rawOtp.includes('?')) {
           const urlParams = new URLSearchParams(rawOtp.split('?')[1] || '');
-          const urlOtp = urlParams.get('otp') || urlParams.get('OTP');
-          if (urlOtp) {
-            otp = urlOtp.trim();
-          }
-        } catch (e) {
-          // Ignore URL parsing errors
+          extractedOtp = urlParams.get('otp') || urlParams.get('OTP') || null;
+        } else {
+          // Try as query string directly
+          const urlParams = new URLSearchParams(rawOtp);
+          extractedOtp = urlParams.get('otp') || urlParams.get('OTP') || null;
         }
-      }
-      
-      // Extract 6-digit number if OTP is embedded in text
-      const digitMatch = otp.match(/\d{6}/);
-      if (digitMatch && digitMatch[0]) {
-        otp = digitMatch[0];
+        if (extractedOtp) {
+          extractedOtp = extractedOtp.trim();
+        }
+      } catch (e) {
+        // Ignore URL parsing errors
       }
     }
+    
+    // Method 3: Extract 6-digit number from anywhere in the string (most robust fallback)
+    if (!extractedOtp) {
+      const digitMatch = rawOtp.match(/\d{6}/);
+      if (digitMatch && digitMatch[0] && /^\d{6}$/.test(digitMatch[0])) {
+        extractedOtp = digitMatch[0];
+      }
+    }
+    
+    // Method 4: If rawOtp is already a 6-digit number, use it directly
+    if (!extractedOtp && /^\d{6}$/.test(rawOtp)) {
+      extractedOtp = rawOtp.trim();
+    }
+    
+    // Use extracted OTP if found, otherwise use original (for validation error message)
+    otp = extractedOtp || otp;
 
     // Validate OTP format (should be 6 digits)
     if (!/^\d{6}$/.test(otp)) {
-      throw new BadRequestException('Invalid OTP format. OTP must be a 6-digit number.');
+      throw new BadRequestException(`Invalid OTP format. OTP must be a 6-digit number. Received: ${rawOtp?.substring(0, 50)}`);
     }
 
     const session = await this.prisma.session.findFirst({

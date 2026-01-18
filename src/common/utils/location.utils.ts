@@ -60,20 +60,20 @@ export function verifyLocation(
     (osVersion && /android/i.test(osVersion)) ||
     (osVersion && /^[\d.]+$/.test(osVersion) && parseFloat(osVersion) < 20); // Android version numbers are typically < 20
   
-  // Android devices can have GPS accuracy issues of 20-50 meters (65-164 feet) in buildings
-  // iOS devices typically have 5-15 meters (16-49 feet) accuracy
-  // Use much higher tolerance for Android devices
+  // Android devices can have GPS accuracy issues of 30-100 meters (98-328 feet) in buildings
+  // iOS devices typically have 10-30 meters (32-98 feet) accuracy, especially indoors
+  // Use much higher tolerance to prevent false negatives
   let baseTolerance: number;
   let percentageTolerance: number;
   
   if (isAndroid) {
-    // Android: 50 meters (164 feet) base + 50% of radius
-    baseTolerance = 50; // meters (164 feet) - higher tolerance for Android GPS inaccuracy
-    percentageTolerance = radiusInMeters * 0.5; // 50% of radius for Android
+    // Android: 80 meters (262 feet) base + 100% of radius (doubled tolerance)
+    baseTolerance = 80; // meters (262 feet) - very high tolerance for Android GPS inaccuracy
+    percentageTolerance = radiusInMeters * 1.0; // 100% of radius for Android (doubled)
   } else {
-    // iOS/Other: 20 meters (65.6 feet) base + 25% of radius
-    baseTolerance = 20; // meters (65.6 feet) - standard tolerance for iOS
-    percentageTolerance = radiusInMeters * 0.25; // 25% of radius
+    // iOS/Other: 40 meters (131 feet) base + 75% of radius (increased for indoor accuracy)
+    baseTolerance = 40; // meters (131 feet) - increased tolerance for iOS indoor GPS issues
+    percentageTolerance = radiusInMeters * 0.75; // 75% of radius for iOS
   }
   
   const gpsTolerance = Math.max(baseTolerance, percentageTolerance); // Use whichever is larger
@@ -113,11 +113,11 @@ export function getLocationAccuracyMessage(
   let percentageTolerance: number;
   
   if (isAndroid) {
-    baseTolerance = 50; // meters (164 feet) for Android
-    percentageTolerance = radiusInMeters * 0.5; // 50% of radius for Android
+    baseTolerance = 80; // meters (262 feet) for Android
+    percentageTolerance = radiusInMeters * 1.0; // 100% of radius for Android (doubled)
   } else {
-    baseTolerance = 20; // meters (65.6 feet) for iOS
-    percentageTolerance = radiusInMeters * 0.25; // 25% of radius
+    baseTolerance = 40; // meters (131 feet) for iOS
+    percentageTolerance = radiusInMeters * 0.75; // 75% of radius for iOS
   }
   
   const gpsTolerance = Math.max(baseTolerance, percentageTolerance);
