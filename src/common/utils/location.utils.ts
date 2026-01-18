@@ -28,12 +28,12 @@ export function calculateDistance(
 
 /**
  * Verify if student location is within allowed radius of class location
- * Uses strict verification: distance must be <= radius (no tolerance buffer)
+ * Includes GPS accuracy tolerance for Android and other devices (typically 5-10 meters)
  * @param studentLat Student's latitude
  * @param studentLng Student's longitude
  * @param classLat Class location latitude
  * @param classLng Class location longitude
- * @param radius Allowed radius in meters (default: 9.144m = 30ft for precise verification)
+ * @param radius Allowed radius in feet (default: 30ft for precise verification)
  * @returns True if within radius, false otherwise
  */
 export function verifyLocation(
@@ -41,31 +41,40 @@ export function verifyLocation(
   studentLng: number,
   classLat: number,
   classLng: number,
-  radius: number = 9.144 // Default: 30 feet
+  radius: number = 30 // Default: 30 feet (stored in feet now)
 ): boolean {
   if (!studentLat || !studentLng || !classLat || !classLng) {
-    return false; // Missing location data - strict: fail if any location is missing
+    return false; // Missing location data
   }
 
+  // Convert radius from feet to meters for distance calculation
+  const radiusInMeters = radius * 0.3048; // 1 foot = 0.3048 meters
+  
+  // Add GPS accuracy tolerance (typically 5-10 meters for mobile devices, especially Android)
+  // Using 10 meters (32.8 feet) tolerance to account for GPS inaccuracy
+  const gpsTolerance = 10; // meters
+  
   const distance = calculateDistance(studentLat, studentLng, classLat, classLng);
-  // Strict verification: must be exactly within radius (distance <= radius)
-  return distance <= radius;
+  
+  // Allow within radius + GPS tolerance to prevent false negatives
+  return distance <= (radiusInMeters + gpsTolerance);
 }
 
 /**
  * Get location accuracy message for user feedback
  * @param distance Distance in meters
- * @param radius Allowed radius in meters
+ * @param radius Allowed radius in feet (stored in feet now)
  * @returns User-friendly message
  */
 export function getLocationAccuracyMessage(distance: number, radius: number): string {
-  // Convert to feet for user-friendly display (1 meter = 3.28084 feet)
+  // Convert distance to feet for display (1 meter = 3.28084 feet)
   const distanceFeet = distance * 3.28084;
-  const radiusFeet = radius * 3.28084;
+  const radiusInMeters = radius * 0.3048; // Convert radius from feet to meters
+  const gpsTolerance = 10; // meters
   
-  if (distance <= radius) {
-    return `Location verified (${Math.round(distanceFeet)}ft from class, within ${Math.round(radiusFeet)}ft radius)`;
+  if (distance <= (radiusInMeters + gpsTolerance)) {
+    return `Location verified (${Math.round(distanceFeet)}ft from class, within ${Math.round(radius)}ft radius)`;
   } else {
-    return `Too far from class. You are ${Math.round(distanceFeet)}ft away, but must be within ${Math.round(radiusFeet)}ft radius to clock in/out`;
+    return `Too far from class. You are ${Math.round(distanceFeet)}ft away, but must be within ${Math.round(radius)}ft radius to clock in/out`;
   }
 }

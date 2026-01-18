@@ -130,8 +130,9 @@ export class AttendanceService {
       r.includes('Possible credential sharing')
     );
 
-    // Block immediately if credential sharing is detected
-    if (isCredentialSharing && deviceValidation.riskScore >= 50) {
+    // Block immediately if credential sharing is detected (reduced sensitivity)
+    // Only block if risk score is very high (60+) and multiple students using same device
+    if (isCredentialSharing && deviceValidation.riskScore >= 60) {
       await this.antiProxyService.flagStudentForInstructor(
         userId,
         session.classId,
@@ -145,8 +146,8 @@ export class AttendanceService {
       );
     }
 
-    // Block after 2 attempts (lowered from 3) for better security
-    if (suspiciousAttempts.attemptCount >= 2 && deviceValidation.riskScore >= 40) {
+    // Block after 3 attempts with high risk score (reduced sensitivity)
+    if (suspiciousAttempts.attemptCount >= 3 && deviceValidation.riskScore >= 50) {
       // Flag student in instructor's dashboard instead of SMS verification
       await this.antiProxyService.flagStudentForInstructor(
         userId,
@@ -161,8 +162,8 @@ export class AttendanceService {
       );
     }
 
-    // Block after 3 attempts regardless of risk score (original behavior)
-    if (suspiciousAttempts.attemptCount >= 3) {
+    // Block after 5 attempts regardless of risk score (increased from 3 to reduce false positives)
+    if (suspiciousAttempts.attemptCount >= 5) {
       await this.antiProxyService.flagStudentForInstructor(
         userId,
         session.classId,
@@ -201,7 +202,7 @@ export class AttendanceService {
         longitude,
         session.class.latitude,
         session.class.longitude,
-        session.class.locationRadius || 9.144 // Default: 30 feet
+        session.class.locationRadius || 30 // Default: 30 feet (stored in feet now)
       );
 
       if (!isLocationValid) {
@@ -217,7 +218,7 @@ export class AttendanceService {
         const distance = R * c;
         
         throw new BadRequestException(
-          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 0)}`
+          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 30)}`
         );
       }
     }
@@ -398,7 +399,7 @@ export class AttendanceService {
         longitude,
         session.class.latitude,
         session.class.longitude,
-        session.class.locationRadius || 9.144 // Default: 30 feet
+        session.class.locationRadius || 30 // Default: 30 feet (stored in feet now)
       );
 
       if (!isLocationValid) {
@@ -413,7 +414,7 @@ export class AttendanceService {
         const distance = R * c;
         
         throw new BadRequestException(
-          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 9.144)}`
+          `Location verification failed. ${getLocationAccuracyMessage(distance, session.class.locationRadius || 30)}`
         );
       }
     }

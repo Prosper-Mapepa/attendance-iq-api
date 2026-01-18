@@ -114,8 +114,12 @@ export class AntiProxyService {
       throw new BadRequestException('User not found');
     }
 
-    // Check if this is a new device
-    const isNewDevice = !user.attendance.some(
+    // Check if student has clocked in before (has any attendance records)
+    const hasPreviousAttendance = user.attendance.length > 0;
+    
+    // Only flag as new device if student has clocked in before AND is using a different device
+    // Don't flag on first clock-in
+    const isNewDevice = hasPreviousAttendance && !user.attendance.some(
       (record) => record.deviceFingerprint === deviceFingerprint
     );
 
@@ -135,34 +139,37 @@ export class AntiProxyService {
       distinct: ['studentId'],
     });
 
-    // Calculate risk score (0-100, higher = more risky)
+    // Calculate risk score (0-100, higher = more risky) - Reduced sensitivity
     let riskScore = 0;
 
-    // Device-related checks
+    // Device-related checks - Only flag if student has used a device before
     if (isNewDevice) {
-      riskScore += 25; // New device is moderately risky
-      reasons.push('New device detected');
+      riskScore += 10; // Reduced from 25 - New device is less risky if student has history
+      reasons.push('New device detected (after previous clock-ins)');
     }
 
     // CREDENTIAL SHARING: Same device used by multiple students (high risk)
-    if (sameDeviceUsers.length > 0) {
-      riskScore += 50; // Very high risk - likely credential sharing
+    // Only flag if 2+ different students use same device (reduced sensitivity)
+    if (sameDeviceUsers.length >= 2) {
+      riskScore += 40; // Reduced from 50 - Only flag if multiple students
       reasons.push(`Same device used by ${sameDeviceUsers.length} other student(s) recently - Possible credential sharing`);
     }
 
     // Check for rapid device changes (multiple devices in short time)
+    // Increased threshold and time window to reduce false positives
     const recentFingerprints = user.attendance
       .filter(
         (record) =>
-          record.timestamp > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // Last 7 days
+          record.timestamp > new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) // Last 14 days (increased from 7)
       )
       .map((record) => record.deviceFingerprint);
 
     const uniqueRecentFingerprints = new Set(recentFingerprints);
-    if (uniqueRecentFingerprints.size > 3) {
-      riskScore += 35; // Multiple devices in short period
-      reasons.push(`Using ${uniqueRecentFingerprints.size} different devices in 7 days`);
-    } else if (uniqueRecentFingerprints.size > 2 && !isNewDevice) {
+    // Only flag if using 5+ different devices (increased from 3)
+    if (uniqueRecentFingerprints.size > 4) {
+      riskScore += 20; // Reduced from 35
+      reasons.push(`Using ${uniqueRecentFingerprints.size} different devices in 14 days`);
+    } else if (uniqueRecentFingerprints.size > 3 && !isNewDevice) {
       riskScore += 20; // Moderate device switching
     }
 
@@ -201,13 +208,13 @@ export class AntiProxyService {
             latestAttendance.longitude
           );
 
-          // If student "moved" more than 500 meters in less than 5 minutes, it's suspicious
+          // If student "moved" more than 2000 meters in less than 5 minutes, it's suspicious (increased threshold)
           const timeDiff = Date.now() - latestAttendance.timestamp.getTime();
-          if (distance > 500 && timeDiff < 5 * 60 * 1000) {
-            riskScore += 40;
+          if (distance > 2000 && timeDiff < 5 * 60 * 1000) {
+            riskScore += 25; // Reduced from 40
             reasons.push(`Impossible location change: ${Math.round(distance)}m in ${Math.round(timeDiff/1000)}s - Possible credential sharing`);
-          } else if (distance > 1000 && timeDiff < 10 * 60 * 1000) {
-            riskScore += 25;
+          } else if (distance > 5000 && timeDiff < 10 * 60 * 1000) {
+            riskScore += 15; // Reduced from 25, increased distance threshold
             reasons.push(`Rapid location change: ${Math.round(distance)}m`);
           }
         }
@@ -220,27 +227,29 @@ export class AntiProxyService {
         record.timestamp > new Date(Date.now() - 24 * 60 * 60 * 1000) // Last 24 hours
     ).length;
 
-    if (recentAttendanceCount > 6) {
-      riskScore += 15; // Too many attendance marks in short time
+    // Increased threshold to reduce false positives
+    if (recentAttendanceCount > 10) {
+      riskScore += 10; // Reduced from 15
       reasons.push(`Unusual activity: ${recentAttendanceCount} clock-ins in 24 hours`);
     }
 
     // Check for pattern where user consistently uses different devices (credential sharing pattern)
-    if (uniqueRecentFingerprints.size >= 3 && user.attendance.length >= 5) {
+    // Increased thresholds to reduce false positives
+    if (uniqueRecentFingerprints.size >= 5 && user.attendance.length >= 10) {
       const deviceFrequency = new Map<string, number>();
       recentFingerprints.forEach(fp => {
         deviceFrequency.set(fp, (deviceFrequency.get(fp) || 0) + 1);
       });
       
-      // If no device is used more than twice, it's suspicious
+      // If no device is used more than 3 times, it's suspicious (increased from 2)
       const maxUsage = Math.max(...Array.from(deviceFrequency.values()));
-      if (maxUsage <= 2 && uniqueRecentFingerprints.size >= 3) {
-        riskScore += 30;
+      if (maxUsage <= 3 && uniqueRecentFingerprints.size >= 5) {
+        riskScore += 20; // Reduced from 30
         reasons.push('Device switching pattern suggests credential sharing');
       }
     }
 
-    const isValid = riskScore < 60; // Lowered threshold for stricter validation
+    const isValid = riskScore < 70; // Increased threshold from 60 to reduce false positives
 
     return {
       isValid,

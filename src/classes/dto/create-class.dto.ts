@@ -36,11 +36,11 @@ export class CreateClassDto {
   @Max(180)
   longitude?: number;
 
-  @ApiPropertyOptional({ example: 9.144, description: 'Location radius in meters (default: 9.144m = 30ft). Accepts 1.5-30.5 meters (5-100 feet) for precise verification' })
+  @ApiPropertyOptional({ example: 30, description: 'Location radius in feet (default: 30ft). Accepts 5-100 feet for precise verification' })
   @IsNumber()
   @IsOptional()
-  @Min(1.5) // ~5 feet
-  @Max(30.5) // ~100 feet
+  @Min(5) // 5 feet minimum
+  @Max(100) // 100 feet maximum
   locationRadius?: number;
 }
 
