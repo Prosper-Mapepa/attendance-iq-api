@@ -58,7 +58,7 @@ export function verifyLocation(
   const isAndroid = 
     (userAgent && /android/i.test(userAgent)) ||
     (osVersion && /android/i.test(osVersion)) ||
-    (osVersion && /^[\d.]+$/.test(osVersion) && parseFloat(osVersion) < 20)); // Android version numbers are typically < 20
+    (osVersion && /^[\d.]+$/.test(osVersion) && parseFloat(osVersion) < 20); // Android version numbers are typically < 20
   
   // Android devices can have GPS accuracy issues of 20-50 meters (65-164 feet) in buildings
   // iOS devices typically have 5-15 meters (16-49 feet) accuracy

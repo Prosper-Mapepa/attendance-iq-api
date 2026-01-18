@@ -247,12 +247,12 @@ export class AttendanceService {
       if (!isLocationValid) {
         // Calculate actual distance using Haversine formula
         const R = 6371e3; // Earth's radius in meters
-        const ?1 = (latitude * Math.PI) / 180;
-        const ?2 = (session.class.latitude * Math.PI) / 180;
-        const ?? = ((session.class.latitude - latitude) * Math.PI) / 180;
-        const ?? = ((session.class.longitude - longitude) * Math.PI) / 180;
-        const a = Math.sin(?? / 2) * Math.sin(?? / 2) +
-          Math.cos(?1) * Math.cos(?2) * Math.sin(?? / 2) * Math.sin(?? / 2);
+        const phi1 = (latitude * Math.PI) / 180;
+        const phi2 = (session.class.latitude * Math.PI) / 180;
+        const deltaPhi = ((session.class.latitude - latitude) * Math.PI) / 180;
+        const deltaLambda = ((session.class.longitude - longitude) * Math.PI) / 180;
+        const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+          Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const distance = R * c;
         
@@ -480,12 +480,12 @@ export class AttendanceService {
 
       if (!isLocationValid) {
         const R = 6371e3;
-        const ?1 = (latitude * Math.PI) / 180;
-        const ?2 = (session.class.latitude * Math.PI) / 180;
-        const ?? = ((session.class.latitude - latitude) * Math.PI) / 180;
-        const ?? = ((session.class.longitude - longitude) * Math.PI) / 180;
-        const a = Math.sin(?? / 2) * Math.sin(?? / 2) +
-          Math.cos(?1) * Math.cos(?2) * Math.sin(?? / 2) * Math.sin(?? / 2);
+        const phi1 = (latitude * Math.PI) / 180;
+        const phi2 = (session.class.latitude * Math.PI) / 180;
+        const deltaPhi = ((session.class.latitude - latitude) * Math.PI) / 180;
+        const deltaLambda = ((session.class.longitude - longitude) * Math.PI) / 180;
+        const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+          Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         const distance = R * c;
         
