@@ -267,6 +267,9 @@ export class AttendanceService {
           data: existingAttendance,
           isClockedIn: true,
           sessionEndTime: classEndTime.toISOString(),
+          sessionCreatedAt: existingSession.createdAt.toISOString(),
+          classDuration: existingSession.classDuration,
+          serverTime: new Date().toISOString(),
           session: {
             id: existingSession.id,
             class: {
@@ -282,35 +285,126 @@ export class AttendanceService {
 
     const clockInTime = new Date();
     // Create attendance record with clock in (CLOCKED_IN status)
-    const attendance = await this.prisma.attendance.create({
-      data: {
-        studentId: userId,
-        sessionId: session.id,
-        timestamp: clockInTime,
-        clockInTime: clockInTime,
-        status: 'CLOCKED_IN',
-        deviceFingerprint: deviceFingerprint,
-        latitude: latitude,
-        longitude: longitude,
-        userAgent: userAgent,
-        screenResolution: screenResolution,
-        riskScore: deviceValidation.riskScore,
-        isNewDevice: deviceValidation.isNewDevice,
-      },
-      include: {
-        session: {
-          include: {
-            class: {
-              select: {
-                id: true,
-                name: true,
-                subject: true,
+    // Use try-catch to handle race condition where multiple requests try to create simultaneously
+    let attendance;
+    try {
+      attendance = await this.prisma.attendance.create({
+        data: {
+          studentId: userId,
+          sessionId: session.id,
+          timestamp: clockInTime,
+          clockInTime: clockInTime,
+          status: 'CLOCKED_IN',
+          deviceFingerprint: deviceFingerprint,
+          latitude: latitude,
+          longitude: longitude,
+          userAgent: userAgent,
+          screenResolution: screenResolution,
+          riskScore: deviceValidation.riskScore,
+          isNewDevice: deviceValidation.isNewDevice,
+        },
+        include: {
+          session: {
+            include: {
+              class: {
+                select: {
+                  id: true,
+                  name: true,
+                  subject: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+    } catch (error: any) {
+      // Handle unique constraint violation (race condition - another request created it first)
+      // Check for P2002 error code (Prisma unique constraint violation)
+      // Prisma returns target as an array: ['sessionId', 'studentId']
+      const isUniqueConstraintError = 
+        error.code === 'P2002' && 
+        error.meta?.target &&
+        Array.isArray(error.meta.target) &&
+        error.meta.target.includes('sessionId') &&
+        error.meta.target.includes('studentId');
+      
+      if (isUniqueConstraintError) {
+        // Record already exists, fetch it and return as success
+        console.log('Attendance record already exists (race condition), fetching existing record...');
+        attendance = await this.prisma.attendance.findFirst({
+          where: {
+            studentId: userId,
+            sessionId: session.id,
+          },
+          include: {
+            session: {
+              include: {
+                class: {
+                  select: {
+                    id: true,
+                    name: true,
+                    subject: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+        
+        if (!attendance) {
+          // Should not happen, but handle gracefully
+          throw new BadRequestException('Failed to create or retrieve attendance record');
+        }
+        
+        // If already clocked in, return existing record (same as if we found it in the initial check)
+        if (attendance.status === 'CLOCKED_IN') {
+          const existingSession = attendance.session || session;
+          const classEndTime = new Date(existingSession.createdAt.getTime() + existingSession.classDuration * 60 * 1000);
+          
+          return {
+            message: 'Clock in successful! Please wait for class to end before clocking out.',
+            data: {
+              id: attendance.id,
+              studentId: attendance.studentId,
+              sessionId: attendance.sessionId,
+              status: attendance.status,
+              timestamp: attendance.timestamp,
+              clockInTime: attendance.clockInTime,
+              clockOutTime: attendance.clockOutTime,
+              latitude: attendance.latitude,
+              longitude: attendance.longitude,
+              session: attendance.session ? {
+                id: attendance.session.id,
+                class: attendance.session.class ? {
+                  id: attendance.session.class.id,
+                  name: attendance.session.class.name,
+                  subject: attendance.session.class.subject,
+                } : null,
+              } : null,
+            },
+            isClockedIn: true,
+            sessionEndTime: classEndTime.toISOString(),
+            sessionCreatedAt: existingSession.createdAt.toISOString(),
+            classDuration: existingSession.classDuration,
+            serverTime: new Date().toISOString(),
+            session: {
+              id: existingSession.id,
+              class: {
+                name: existingSession.class.name,
+                subject: existingSession.class.subject,
+              },
+            },
+          };
+        } else {
+          // Already clocked out - don't allow clocking in again
+          throw new BadRequestException('Attendance already completed for this session');
+        }
+      } else {
+        // Re-throw if it's not a unique constraint error
+        console.error('Unexpected error creating attendance:', error);
+        throw error;
+      }
+    }
 
     // Calculate class end time based on class duration (class starts when session is created)
     // Class end time = session.createdAt + classDuration (in minutes)
