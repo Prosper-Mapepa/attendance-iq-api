@@ -316,9 +316,28 @@ export class AttendanceService {
     // Class end time = session.createdAt + classDuration (in minutes)
     const classEndTime = new Date(session.createdAt.getTime() + session.classDuration * 60 * 1000);
 
+    // Return response with only necessary fields to avoid serialization issues
     return {
       message: 'Clock in successful! Please wait for class to end before clocking out.',
-      data: attendance,
+      data: {
+        id: attendance.id,
+        studentId: attendance.studentId,
+        sessionId: attendance.sessionId,
+        status: attendance.status,
+        timestamp: attendance.timestamp,
+        clockInTime: attendance.clockInTime,
+        clockOutTime: attendance.clockOutTime,
+        latitude: attendance.latitude,
+        longitude: attendance.longitude,
+        session: attendance.session ? {
+          id: attendance.session.id,
+          class: attendance.session.class ? {
+            id: attendance.session.class.id,
+            name: attendance.session.class.name,
+            subject: attendance.session.class.subject,
+          } : null,
+        } : null,
+      },
       isClockedIn: true,
       sessionEndTime: classEndTime.toISOString(),
       session: {
