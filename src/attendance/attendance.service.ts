@@ -317,6 +317,7 @@ export class AttendanceService {
     const classEndTime = new Date(session.createdAt.getTime() + session.classDuration * 60 * 1000);
 
     // Return response with only necessary fields to avoid serialization issues
+    // Include sessionCreatedAt and classDuration for synchronized countdown across devices
     return {
       message: 'Clock in successful! Please wait for class to end before clocking out.',
       data: {
@@ -340,6 +341,9 @@ export class AttendanceService {
       },
       isClockedIn: true,
       sessionEndTime: classEndTime.toISOString(),
+      sessionCreatedAt: session.createdAt.toISOString(), // Server time when session was created
+      classDuration: session.classDuration, // Class duration in minutes
+      serverTime: new Date().toISOString(), // Current server time for clock sync
       session: {
         id: session.id,
         class: {
