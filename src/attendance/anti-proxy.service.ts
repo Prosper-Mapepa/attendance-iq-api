@@ -377,29 +377,31 @@ export class AntiProxyService {
       },
     });
 
-    // Check for multiple attendance marks in short time
-    const rapidAttendance = recentAttendance.filter((record, index) => {
-      if (index === 0) return false;
-      const timeDiff = record.timestamp.getTime() - recentAttendance[index - 1].timestamp.getTime();
-      return timeDiff < 2 * 60 * 1000; // Less than 2 minutes apart
-    });
+    // DISABLED: Check for multiple attendance marks in short time
+    // This check is disabled to prevent false positives
+    // const rapidAttendance = recentAttendance.filter((record, index) => {
+    //   if (index === 0) return false;
+    //   const timeDiff = record.timestamp.getTime() - recentAttendance[index - 1].timestamp.getTime();
+    //   return timeDiff < 2 * 60 * 1000; // Less than 2 minutes apart
+    // });
 
-    if (rapidAttendance.length > 0) {
-      reasons.push('Multiple attendance marks in short time period');
-      riskScore += 30;
-    }
+    // if (rapidAttendance.length > 0) {
+    //   reasons.push('Multiple attendance marks in short time period');
+    //   riskScore += 30;
+    // }
 
-    // Check for attendance from different locations
-    const uniqueLocations = new Set(
-      recentAttendance
-        .map((record) => `${record.latitude},${record.longitude}`)
-        .filter((loc) => loc !== 'undefined,undefined')
-    );
+    // DISABLED: Check for attendance from different locations
+    // This check is disabled to prevent false positives (GPS inaccuracy, moving between classes, etc.)
+    // const uniqueLocations = new Set(
+    //   recentAttendance
+    //     .map((record) => `${record.latitude},${record.longitude}`)
+    //     .filter((loc) => loc !== 'undefined,undefined')
+    // );
 
-    if (uniqueLocations.size > 3) {
-      reasons.push('Attendance marked from multiple locations');
-      riskScore += 25;
-    }
+    // if (uniqueLocations.size > 3) {
+    //   reasons.push('Attendance marked from multiple locations');
+    //   riskScore += 25;
+    // }
 
     // Check for unusual timing patterns
     const attendanceHours = recentAttendance.map((record) => record.timestamp.getHours());

@@ -183,72 +183,19 @@ export class AttendanceService {
       deviceValidation.reasons
     );
 
-    // More aggressive blocking for credential sharing (2 attempts instead of 3)
-    const isCredentialSharing = suspiciousAttempts.reasons.some(r => 
-      r.includes('Credential sharing') || 
-      r.includes('Same device used by') ||
-      r.includes('Possible credential sharing')
-    );
-
-    // Block immediately if credential sharing is detected (reduced sensitivity)
-    // Only block if risk score is very high (60+) and multiple students using same device
-    if (isCredentialSharing && deviceValidation.riskScore >= 60) {
-      await this.antiProxyService.flagStudentForInstructor(
-        userId,
-        session.classId,
-        suspiciousAttempts.reasons,
-        deviceValidation.riskScore,
-        suspiciousAttempts.attemptCount
-      );
-      
-      throw new BadRequestException(
-        `Attendance blocked. Credential sharing detected. Your instructor has been notified.`
-      );
-    }
-
-    // Block after 3 attempts with high risk score (reduced sensitivity)
-    if (suspiciousAttempts.attemptCount >= 3 && deviceValidation.riskScore >= 50) {
-      // Flag student in instructor's dashboard instead of SMS verification
-      await this.antiProxyService.flagStudentForInstructor(
-        userId,
-        session.classId,
-        suspiciousAttempts.reasons,
-        deviceValidation.riskScore,
-        suspiciousAttempts.attemptCount
-      );
-      
-      throw new BadRequestException(
-        `Attendance blocked. Multiple suspicious attempts detected. Your instructor has been notified for review.`
-      );
-    }
-
-    // Block after 5 attempts regardless of risk score (increased from 3 to reduce false positives)
-    if (suspiciousAttempts.attemptCount >= 5) {
-      await this.antiProxyService.flagStudentForInstructor(
-        userId,
-        session.classId,
-        suspiciousAttempts.reasons,
-        deviceValidation.riskScore,
-        suspiciousAttempts.attemptCount
-      );
-      
-      throw new BadRequestException(
-        `Attendance blocked. Multiple suspicious attempts detected. Your instructor has been notified for review.`
-      );
-    }
-
-    // For first attempt, log warning
+    // ANTI-PROXY BLOCKING DISABLED - All blocking checks commented out
+    // Log warnings only, but allow attendance to proceed
+    
+    // Log suspicious activity for monitoring (but don't block)
     if (suspiciousAttempts.attemptCount > 0) {
-      console.log(`Warning: Suspicious attempt #${suspiciousAttempts.attemptCount} for student ${userId}. Risk Score: ${deviceValidation.riskScore}. Reasons: ${suspiciousAttempts.reasons.join(', ')}`);
+      console.log(`Info: Suspicious activity detected for student ${userId}. Risk Score: ${deviceValidation.riskScore}. Reasons: ${suspiciousAttempts.reasons.join(', ')}. Attempt #${suspiciousAttempts.attemptCount}. Allowing attendance.`);
     }
 
-    // 3. Detect Suspicious Activity
+    // Detect Suspicious Activity (log only, don't block)
     const suspiciousActivity = await this.antiProxyService.detectSuspiciousActivity(userId);
     
-    if (suspiciousActivity.isSuspicious && suspiciousActivity.riskLevel === 'high') {
-      throw new BadRequestException(
-        `Attendance blocked due to suspicious activity: ${suspiciousActivity.reasons.join(', ')}. Please contact your instructor.`
-      );
+    if (suspiciousActivity.isSuspicious) {
+      console.log(`Info: Suspicious activity patterns detected for student ${userId}. Reasons: ${suspiciousActivity.reasons.join(', ')}. Risk Level: ${suspiciousActivity.riskLevel}. Allowing attendance.`);
     }
 
     // Location verification (if class has location set)
